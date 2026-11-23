@@ -2,328 +2,2057 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>这关有坑 · A段操作原型</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>这关有坑 · 原型</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  html,body { background:#20242e; height:100%; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; }
-  #stage { position:relative; width:min(100vw,177.78vh); margin:0 auto; }
-  canvas { display:block; width:100%; height:auto; background:#fdf6d8; touch-action:none; }
-  #hud { color:#f5f0dc; text-align:center; padding:8px 4px 2px; font-size:15px; }
-  #hud b { color:#ffd83d; }
-  .tbtn {
-    position:absolute; bottom:3.5%; width:15%; aspect-ratio:1/1; border-radius:50%;
-    background:rgba(32,36,46,.38); border:2px solid rgba(255,255,255,.55);
-    color:#fff; font-size:26px; display:flex; align-items:center; justify-content:center;
-    user-select:none; -webkit-user-select:none; touch-action:none;
-  }
-  .tbtn.on { background:rgba(255,216,61,.55); }
-  #btnL { left:4%; } #btnR { left:22%; }
-  #btnJ { right:4%; width:17%; font-size:20px; }
+  html,body { background:#0b0e1a; height:100%; overflow:hidden; font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",system-ui,sans-serif; }
+  #wrap { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
+  canvas { display:block; width:min(100vw,177.78vh); height:auto; aspect-ratio:16/9; background:#10142a; touch-action:none; }
+  #rotateHint { display:none; position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:10;
+    background:rgba(8,10,24,0.88); color:#ffd166; font-size:14px; padding:8px 16px; border-radius:999px;
+    border:1px solid rgba(255,209,102,0.55); pointer-events:none; white-space:nowrap; }
+  @media (orientation: portrait) { #rotateHint { display:block; } }
 </style>
 </head>
 <body>
-<div id="hud">死亡次数：<b id="deaths">0</b>　<span id="tip">←/→ 移动 · 空格跳跃（触屏按钮可同时按）</span></div>
-<div id="stage">
-  <canvas id="cv" width="960" height="540"></canvas>
-  <div class="tbtn" id="btnL">◀</div>
-  <div class="tbtn" id="btnR">▶</div>
-  <div class="tbtn" id="btnJ">跳</div>
-</div>
-
+<div id="wrap"><canvas id="cv" width="960" height="540"></canvas></div>
+<div id="rotateHint">↻ 请将手机横屏，体验更佳</div>
 <script>
 "use strict";
 /* ============================================================
-   《这关有坑》A 段核心操作原型
-   只验操作手感：横移/跳跃物理、土狼、缓冲、可变跳高、死亡重开、确定性。
-   固定步长模拟 240Hz；土狼/缓冲/定格全部用整数步计数，杜绝浮点漂移。
+   Only SHIFT — prototype (Game Off 2026, theme: SHIFT)
+   One rule: the world state may ONLY change through shift(dir).
+   ring 0..3 -> platform set + gravity are read from CONFIG.
    ============================================================ */
-const STEP = 1 / 240;
-const CFG = {
-  W: 960, H: 540,
-  pw: 36, ph: 44,               // 玩家碰撞盒
-  speed: 260,                    // 横移 px/s
-  gUp: 2400,                     // 上升重力 px/s^2
-  gDown: 3240,                   // 下落重力 = 上升 ×1.35
-  jumpVel: 850,                  // 起跳速度 px/s
-  cutMul: 0.45,                  // 松开跳跃键截断系数
-  maxFall: 900,
-  coyoteSteps: 24,               // 0.10s
-  bufferSteps: 31,               // 名义≈0.129s；实测有效提前量≈0.117s（0.12±0.01）
-  freezeSteps: 84,               // 0.35s 死亡定格
-  killY: 640
+const CONFIG = {
+  viewW: 960, viewH: 540,
+  runSpeed: 195,          // px/s, constant auto-run
+  gravity: 1600,          // px/s^2
+  maxFall: 760,
+  playerSize: 30,
+  killBelowY: 760,        // fell out of the world (gravity down)
+  killAboveY: -260,       // flew out of the world (gravity up)
+  states: [
+    { name:"黎明",  plat:"A", grav: 1, sky:"#16213f", far:"#1f2c52", platA:"#e8a34c", platB:"#5b6ee1", player:"#ffd166" },
+    { name:"黄昏",  plat:"B", grav: 1, sky:"#241433", far:"#331c4a", platA:"#e8a34c", platB:"#c65df0", player:"#ffd166" },
+    { name:"夜幕", plat:"B", grav:-1, sky:"#0a2436", far:"#10334c", platA:"#e8a34c", platB:"#39c2d7", player:"#ffd166" },
+    { name:"虚空",  plat:"A", grav:-1, sky:"#1d1d26", far:"#2a2a38", platA:"#f2f2f2", platB:"#39c2d7", player:"#ffd166" }
+  ]
 };
 
-/* 单屏测试场：几段平台 + 尖刺 + 终点旗（数据驱动，格式沿用四相） */
-const LEVEL = {
-  spawn: { x: 80, y: 426 },
-  solids: [
-    { x: 0,   y: 470, w: 400, h: 70 },    // 地面 A（出生）
-    { x: 560, y: 470, w: 400, h: 70 },    // 地面 B（旗与刺）
-    { x: 400, y: 532, w: 160, h: 8 },     // 坑底
-    { x: 60,  y: 340, w: 220, h: 18 },    // 土狼测试台（右缘 x=280）
-    { x: 400, y: 385, w: 110, h: 16 }     // 坑上小台
-  ],
-  spikes: [
-    { x: 420, y: 532, n: 6 },             // 坑底刺
-    { x: 650, y: 470, n: 3 }              // 地面 B 刺带
-  ],
-  flag: { x: 892, y: 470 }
-};
-const TOOTH_W = 20, TOOTH_H = 18;
-function spikeBox(s) { return { x: s.x + 5, y: s.y - TOOTH_H + 4, w: s.n * TOOTH_W - 10, h: TOOTH_H - 4 }; }
+/* Level data. Platforms: {x,y,w,set} — set "A"/"B" solid only in matching
+   states, "AB" always solid. Spikes: {x,y,set} sit on a surface, kill on touch
+   when their set is active. Ceiling platforms hang at fixed y (their underside
+   is the running surface when gravity is up). */
+const LEVELS = [
+  {
+    name: "序章 · 别停",
+    width: 2300, spawn: { x: 60, y: 400 },
+    hint: "移位之后，别停。",
+    trap: { x0: 1100, x1: 1700, surf: 460 },
+    platforms: [
+      { x:-40,  y:460, w:560,  set:"AB" },
+      { x:520,  y:460, w:380,  set:"B"  },
+      { x:900,  y:460, w:1440, set:"AB" },
+      { x:-40,  y:36,  w:2380, set:"AB" }   // sky rail: flipping up is survivable
+    ],
+    spikes: [
+      { x:1350, y:460, set:"B" },
+      { x:1620, y:460, set:"A" }
+    ],
+    goal: { x: 2100, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 1 关 · 移位大地",
+    width: 3150, spawn: { x: 60, y: 400 },
+    hint: "你自己会跑。点「前移」让世界向前移，点「后移」让世界退回来。",
+    platforms: [
+      { x:-40,  y:460, w:740,  set:"AB" },
+      { x:700,  y:460, w:210,  set:"B"  },
+      { x:900,  y:460, w:620,  set:"AB" },
+      { x:1520, y:460, w:240,  set:"A"  },
+      { x:1760, y:460, w:660,  set:"AB" },
+      { x:2420, y:460, w:250,  set:"B"  },
+      { x:2670, y:460, w:560,  set:"AB" },
+      { x:-40,  y:36,  w:3270, set:"AB" }   // sky rail: flipping up is survivable
+    ],
+    spikes: [
+      { x:1150, y:460, set:"A" },
+      { x:1980, y:460, set:"B" }
+    ],
+    goal: { x: 2980, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 2 关 · 移位天空",
+    width: 3250, spawn: { x: 60, y: 400 },
+    hint: "地板到头了。连移两次翻转重力，去天花板上跑。",
+    platforms: [
+      { x:-40,  y:460, w:660,  set:"AB" },
+      { x:520,  y:96,  w:880,  set:"B"  },
+      { x:1300, y:96,  w:800,  set:"A"  },
+      { x:1950, y:96,  w:790,  set:"B"  },
+      { x:2740, y:460, w:580,  set:"AB" }
+    ],
+    spikes: [
+      { x:1620, y:120, set:"B", hang:true }
+    ],
+    goal: { x: 3050, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 3 关 · 错峰",
+    width: 3680, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-20, y:460, w:520, set:"AB" },
+      { x:480, y:460, w:1740, set:"AB" },
+      { x:2200, y:460, w:220, set:"AB" },
+      { x:2420, y:96, w:640, set:"B" },
+      { x:2400, y:460, w:660, set:"AB" },
+      { x:3040, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:920, y:460, set:"A" },
+      { x:1400, y:460, set:"B" },
+      { x:1880, y:460, set:"A" }
+    ],
+    goal: { x: 3360, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 4 关 · 棘轮",
+    width: 5350, spawn: { x: 60, y: 400 },
+    hint: "",
+    ratchet: { x0: 300, x1: 3300 },
+    platforms: [
+      { x:-40, y:36, w:3300, set:"AB" },
+      { x:-20, y:460, w:620, set:"AB" },
+      { x:600, y:460, w:260, set:"B" },
+      { x:860, y:460, w:560, set:"AB" },
+      { x:1820, y:460, w:340, set:"A" },
+      { x:2160, y:460, w:560, set:"AB" },
+      { x:2720, y:460, w:260, set:"B" },
+      { x:2980, y:460, w:580, set:"AB" },
+      { x:3540, y:460, w:1190, set:"AB" },
+      { x:4710, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:1050, y:460, set:"A" },
+      { x:2400, y:460, set:"B" },
+      { x:3960, y:460, set:"B" },
+      { x:4390, y:460, set:"A" }
+    ],
+    goal: { x: 5030, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 5 关 · 回廊",
+    width: 4860, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-20, y:460, w:440, set:"AB" },
+      { x:420, y:96, w:560, set:"B" },
+      { x:740, y:96, w:800, set:"A" },
+      { x:400, y:460, w:1140, set:"AB" },
+      { x:1520, y:460, w:240, set:"AB" },
+      { x:1740, y:460, w:1620, set:"AB" },
+      { x:3360, y:96, w:600, set:"B" },
+      { x:3340, y:460, w:260, set:"AB" },
+      { x:3980, y:460, w:260, set:"AB" },
+      { x:4220, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:2160, y:460, set:"A" },
+      { x:2590, y:460, set:"B" },
+      { x:3020, y:460, set:"A" },
+      { x:3660, y:120, set:"A", hang:true }
+    ],
+    goal: { x: 4540, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 6 关 · 交织",
+    width: 5690, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-20, y:460, w:440, set:"AB" },
+      { x:400, y:460, w:2580, set:"AB" },
+      { x:2960, y:460, w:220, set:"AB" },
+      { x:3180, y:96, w:620, set:"B" },
+      { x:3160, y:460, w:640, set:"AB" },
+      { x:3780, y:460, w:280, set:"AB" },
+      { x:4040, y:460, w:60, set:"AB" },
+      { x:4110, y:200, w:280, set:"AB" },
+      { x:4450, y:340, w:280, set:"AB" },
+      { x:4770, y:460, w:300, set:"AB" },
+      { x:5050, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:840, y:460, set:"A" },
+      { x:1290, y:460, set:"B" },
+      { x:1740, y:460, set:"A" },
+      { x:2190, y:460, set:"B" },
+      { x:2640, y:460, set:"A" },
+      { x:3480, y:120, set:"A", hang:true }
+    ],
+    goal: { x: 5370, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 7 关 · 浮岛",
+    width: 5235, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-20, y:460, w:440, set:"AB" },
+      { x:400, y:460, w:60, set:"AB" },
+      { x:470, y:200, w:300, set:"AB" },
+      { x:830, y:340, w:310, set:"AB" },
+      { x:1245, y:200, w:300, set:"AB" },
+      { x:1605, y:340, w:290, set:"AB" },
+      { x:1935, y:460, w:300, set:"AB" },
+      { x:2215, y:460, w:220, set:"AB" },
+      { x:2415, y:460, w:1640, set:"AB" },
+      { x:4055, y:96, w:560, set:"B" },
+      { x:4035, y:460, w:580, set:"AB" },
+      { x:4595, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:1395, y:222, set:"A", hang:true },
+      { x:2835, y:460, set:"B" },
+      { x:3275, y:460, set:"A" },
+      { x:3715, y:460, set:"B" }
+    ],
+    goal: { x: 4915, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 8 关 · 双棘",
+    width: 7600, spawn: { x: 60, y: 400 },
+    hint: "",
+    ratchet: { x0: 300, x1: 3300 },
+    platforms: [
+      { x:-40, y:36, w:3300, set:"AB" },
+      { x:-20, y:460, w:620, set:"AB" },
+      { x:600, y:460, w:260, set:"B" },
+      { x:860, y:460, w:560, set:"AB" },
+      { x:1820, y:460, w:340, set:"A" },
+      { x:2160, y:460, w:560, set:"AB" },
+      { x:2720, y:460, w:260, set:"B" },
+      { x:2980, y:460, w:580, set:"AB" },
+      { x:3540, y:460, w:1190, set:"AB" },
+      { x:4710, y:460, w:1710, set:"AB" },
+      { x:6420, y:96, w:560, set:"A" },
+      { x:6400, y:460, w:580, set:"AB" },
+      { x:6960, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:1050, y:460, set:"A" },
+      { x:2400, y:460, set:"B" },
+      { x:3960, y:460, set:"B" },
+      { x:4390, y:460, set:"A" }
+    ],
+    movers: [
+      { x:5160, y:390, set:"A", axis:"y", dist:70, speed:1.7, phase:-42.891 },
+      { x:5620, y:390, set:"B", axis:"y", dist:70, speed:1.7, phase:-46.901 },
+      { x:6080, y:390, set:"A", axis:"y", dist:70, speed:1.8, phase:-53.998 }
+    ],
+    goal: { x: 7280, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 9 关 · 巡针",
+    width: 6970, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-20, y:460, w:480, set:"AB" },
+      { x:440, y:460, w:2200, set:"AB" },
+      { x:2620, y:460, w:220, set:"AB" },
+      { x:2820, y:460, w:1620, set:"AB" },
+      { x:4440, y:96, w:640, set:"B" },
+      { x:4420, y:460, w:660, set:"AB" },
+      { x:5060, y:460, w:280, set:"AB" },
+      { x:5320, y:460, w:60, set:"AB" },
+      { x:5390, y:200, w:280, set:"AB" },
+      { x:5730, y:340, w:280, set:"AB" },
+      { x:6050, y:460, w:300, set:"AB" },
+      { x:6330, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:3240, y:460, set:"B" },
+      { x:3670, y:460, set:"A" },
+      { x:4100, y:460, set:"B" }
+    ],
+    movers: [
+      { x:890, y:390, set:"A", axis:"y", dist:70, speed:1.5, phase:-4.814 },
+      { x:1360, y:390, set:"B", axis:"y", dist:70, speed:1.5, phase:-8.429 },
+      { x:1830, y:390, set:"A", axis:"y", dist:70, speed:1.6, phase:-12.952 },
+      { x:2300, y:390, set:"B", axis:"y", dist:70, speed:1.6, phase:-16.809 },
+      { x:4760, y:165, set:"A", axis:"y", dist:45, speed:1.8, phase:-44.955, hang:true }
+    ],
+    goal: { x: 6650, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 10 关 · 试炼",
+    width: 6960, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-20, y:460, w:440, set:"AB" },
+      { x:400, y:460, w:2480, set:"AB" },
+      { x:2860, y:460, w:220, set:"AB" },
+      { x:3080, y:96, w:760, set:"B" },
+      { x:3060, y:460, w:260, set:"AB" },
+      { x:3860, y:460, w:260, set:"AB" },
+      { x:4100, y:460, w:60, set:"AB" },
+      { x:4170, y:200, w:270, set:"AB" },
+      { x:4500, y:340, w:270, set:"AB" },
+      { x:4810, y:460, w:300, set:"AB" },
+      { x:5090, y:460, w:1250, set:"AB" },
+      { x:6320, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:840, y:460, set:"A" },
+      { x:1265, y:460, set:"B" },
+      { x:1690, y:460, set:"A" },
+      { x:2115, y:460, set:"B" },
+      { x:2540, y:460, set:"A" },
+      { x:3380, y:120, set:"A", hang:true },
+      { x:3640, y:120, set:"A", hang:true }
+    ],
+    movers: [
+      { x:5540, y:390, set:"B", axis:"y", dist:70, speed:1.9, phase:-51.824 },
+      { x:6000, y:390, set:"A", axis:"y", dist:70, speed:1.9, phase:-56.306 }
+    ],
+    goal: { x: 6640, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 11 关 · 疾风",
+    width: 8390, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-20, y:460, w:440, set:"AB" },
+      { x:400, y:460, w:2610, set:"AB" },
+      { x:2990, y:460, w:1640, set:"AB" },
+      { x:4610, y:460, w:1260, set:"AB" },
+      { x:5870, y:96, w:640, set:"A" },
+      { x:5850, y:460, w:660, set:"AB" },
+      { x:6490, y:460, w:280, set:"AB" },
+      { x:6750, y:460, w:60, set:"AB" },
+      { x:6820, y:200, w:275, set:"AB" },
+      { x:7155, y:340, w:275, set:"AB" },
+      { x:7470, y:460, w:300, set:"AB" },
+      { x:7750, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:850, y:460, set:"A" },
+      { x:1305, y:460, set:"B" },
+      { x:1760, y:460, set:"A" },
+      { x:2215, y:460, set:"B" },
+      { x:2670, y:460, set:"A" },
+      { x:3410, y:460, set:"B" },
+      { x:3850, y:460, set:"A" },
+      { x:4290, y:460, set:"B" }
+    ],
+    movers: [
+      { x:5060, y:390, set:"A", axis:"y", dist:70, speed:1.8, phase:-39.066 },
+      { x:5530, y:390, set:"B", axis:"y", dist:70, speed:1.8, phase:-43.404 },
+      { x:6190, y:165, set:"B", axis:"y", dist:45, speed:1.9, phase:-55.475, hang:true }
+    ],
+    speeds: [{ x0: 360, x1: 3050, mul: 1.3 }],
+    goal: { x: 8070, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 12 关 · 凝滞",
+    width: 6340, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-20, y:460, w:440, set:"AB" },
+      { x:400, y:460, w:2060, set:"AB" },
+      { x:2420, y:460, w:220, set:"AB" },
+      { x:2620, y:460, w:1620, set:"AB" },
+      { x:4220, y:460, w:1520, set:"AB" },
+      { x:5700, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:940, y:460, set:"A" },
+      { x:1500, y:460, set:"A" },
+      { x:2060, y:460, set:"A" },
+      { x:3040, y:460, set:"B" },
+      { x:3470, y:460, set:"A" },
+      { x:3900, y:460, set:"B" },
+      { x:4760, y:460, set:"B" },
+      { x:5340, y:460, set:"B" }
+    ],
+    movers: [
+      { x:980, y:390, set:"B", axis:"y", dist:70, speed:1.8, phase:-10.063 },
+      { x:4800, y:390, set:"A", axis:"y", dist:70, speed:1.9, phase:-47.755 }
+    ],
+    locks: [{ x0: 740, x1: 2360 }, { x0: 4560, x1: 5640 }],
+    goal: { x: 6020, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 13 关 · 巡回",
+    width: 7780, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-20, y:460, w:440, set:"AB" },
+      { x:400, y:460, w:2630, set:"AB" },
+      { x:3030, y:96, w:680, set:"B" },
+      { x:3010, y:460, w:700, set:"AB" },
+      { x:3690, y:460, w:2480, set:"AB" },
+      { x:6150, y:460, w:60, set:"AB" },
+      { x:6220, y:200, w:270, set:"AB" },
+      { x:6550, y:340, w:270, set:"AB" },
+      { x:6860, y:460, w:300, set:"AB" },
+      { x:7140, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:4110, y:460, set:"A" },
+      { x:4540, y:460, set:"B" },
+      { x:4970, y:460, set:"A" },
+      { x:5400, y:460, set:"B" },
+      { x:5830, y:460, set:"A" }
+    ],
+    movers: [
+      { x:850, y:390, set:"A", axis:"y", dist:70, speed:1.9, phase:-6.127 },
+      { x:1310, y:390, set:"B", axis:"y", dist:70, speed:1.9, phase:-10.609 },
+      { x:1770, y:390, set:"A", axis:"y", dist:70, speed:2, phase:-15.968 },
+      { x:2230, y:390, set:"B", axis:"y", dist:70, speed:2, phase:-20.686 },
+      { x:2690, y:390, set:"A", axis:"y", dist:70, speed:2.1, phase:-26.752 },
+      { x:3370, y:165, set:"A", axis:"y", dist:45, speed:2, phase:-35.52, hang:true }
+    ],
+    goal: { x: 7460, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 14 关 · 颠倒",
+    width: 9390, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-20, y:460, w:440, set:"AB" },
+      { x:400, y:460, w:2110, set:"AB" },
+      { x:2490, y:460, w:1640, set:"AB" },
+      { x:4130, y:96, w:560, set:"A" },
+      { x:4110, y:460, w:260, set:"AB" },
+      { x:4710, y:460, w:260, set:"AB" },
+      { x:4970, y:96, w:560, set:"B" },
+      { x:5290, y:96, w:800, set:"A" },
+      { x:4950, y:460, w:1140, set:"AB" },
+      { x:6070, y:460, w:1710, set:"AB" },
+      { x:7760, y:460, w:60, set:"AB" },
+      { x:7830, y:200, w:270, set:"AB" },
+      { x:8160, y:340, w:270, set:"AB" },
+      { x:8470, y:460, w:300, set:"AB" },
+      { x:8750, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:850, y:460, set:"A" },
+      { x:1290, y:460, set:"B" },
+      { x:1730, y:460, set:"A" },
+      { x:2170, y:460, set:"B" },
+      { x:2910, y:460, set:"B" },
+      { x:3350, y:460, set:"A" },
+      { x:3790, y:460, set:"B" },
+      { x:5250, y:120, set:"A", hang:true }
+    ],
+    movers: [
+      { x:6520, y:390, set:"A", axis:"y", dist:70, speed:2, phase:-64.686 },
+      { x:6980, y:390, set:"B", axis:"y", dist:70, speed:2, phase:-69.404 },
+      { x:7440, y:390, set:"A", axis:"y", dist:70, speed:2.1, phase:-77.906 }
+    ],
+    inverts: [{ x0: 380, x1: 2530 }, { x0: 4930, x1: 6110 }],
+    goal: { x: 9070, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 15 关 · 异变",
+    width: 8800, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-20, y:460, w:440, set:"AB" },
+      { x:400, y:460, w:1780, set:"AB" },
+      { x:2140, y:460, w:2480, set:"AB" },
+      { x:4600, y:460, w:1260, set:"AB" },
+      { x:5840, y:460, w:1780, set:"AB" },
+      { x:7600, y:96, w:580, set:"B" },
+      { x:7580, y:460, w:600, set:"AB" },
+      { x:8160, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:1500, y:460, set:"A" },
+      { x:1840, y:460, set:"B" },
+      { x:2560, y:460, set:"A" },
+      { x:2990, y:460, set:"B" },
+      { x:3420, y:460, set:"A" },
+      { x:3850, y:460, set:"B" },
+      { x:4280, y:460, set:"A" },
+      { x:6940, y:460, set:"B" },
+      { x:7280, y:460, set:"A" }
+    ],
+    movers: [
+      { x:5050, y:390, set:"B", axis:"y", dist:70, speed:1.9, phase:-47.05 },
+      { x:5520, y:390, set:"A", axis:"y", dist:70, speed:1.9, phase:-51.629 }
+    ],
+    events: [{ x: 600 }, { x: 6040 }],
+    goal: { x: 8480, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 16 关 · 绝壁",
+    width: 8240, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-20, y:460, w:440, set:"AB" },
+      { x:400, y:460, w:60, set:"AB" },
+      { x:470, y:200, w:265, set:"AB" },
+      { x:795, y:340, w:270, set:"AB" },
+      { x:1170, y:200, w:260, set:"AB" },
+      { x:1490, y:340, w:250, set:"AB" },
+      { x:1845, y:200, w:245, set:"AB" },
+      { x:2120, y:460, w:300, set:"AB" },
+      { x:2420, y:96, w:560, set:"A" },
+      { x:2400, y:460, w:260, set:"AB" },
+      { x:3000, y:460, w:260, set:"AB" },
+      { x:3240, y:460, w:2050, set:"AB" },
+      { x:5270, y:460, w:1710, set:"AB" },
+      { x:6980, y:96, w:640, set:"B" },
+      { x:6960, y:460, w:660, set:"AB" },
+      { x:7600, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:930, y:340, set:"B" },
+      { x:3660, y:460, set:"B" },
+      { x:4090, y:460, set:"A" },
+      { x:4520, y:460, set:"B" },
+      { x:4950, y:460, set:"A" }
+    ],
+    movers: [
+      { x:5720, y:390, set:"A", axis:"y", dist:70, speed:2, phase:-56.48 },
+      { x:6180, y:390, set:"B", axis:"y", dist:70, speed:2, phase:-61.198 },
+      { x:6640, y:390, set:"A", axis:"y", dist:70, speed:2.1, phase:-69.291 },
+      { x:7300, y:165, set:"A", axis:"y", dist:45, speed:2.1, phase:-79.54, hang:true }
+    ],
+    goal: { x: 7920, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 17 关 · 连环",
+    width: 10490, spawn: { x: 60, y: 400 },
+    hint: "",
+    ratchet: { x0: 300, x1: 3300 },
+    platforms: [
+      { x:-40, y:36, w:3300, set:"AB" },
+      { x:-20, y:460, w:620, set:"AB" },
+      { x:600, y:460, w:260, set:"B" },
+      { x:860, y:460, w:560, set:"AB" },
+      { x:1820, y:460, w:340, set:"A" },
+      { x:2160, y:460, w:560, set:"AB" },
+      { x:2720, y:460, w:260, set:"B" },
+      { x:2980, y:460, w:580, set:"AB" },
+      { x:3540, y:460, w:1710, set:"AB" },
+      { x:5230, y:460, w:2020, set:"AB" },
+      { x:7250, y:96, w:600, set:"B" },
+      { x:7230, y:460, w:260, set:"AB" },
+      { x:7870, y:460, w:260, set:"AB" },
+      { x:8110, y:460, w:1780, set:"AB" },
+      { x:9850, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:1050, y:460, set:"A" },
+      { x:2400, y:460, set:"B" },
+      { x:5650, y:460, set:"A" },
+      { x:6070, y:460, set:"B" },
+      { x:6490, y:460, set:"A" },
+      { x:6910, y:460, set:"B" },
+      { x:7550, y:120, set:"A", hang:true },
+      { x:9210, y:460, set:"A" },
+      { x:9550, y:460, set:"B" }
+    ],
+    movers: [
+      { x:3990, y:390, set:"B", axis:"y", dist:70, speed:1.9, phase:-36.722 },
+      { x:4450, y:390, set:"A", axis:"y", dist:70, speed:1.9, phase:-41.204 },
+      { x:4910, y:390, set:"B", axis:"y", dist:70, speed:2, phase:-48.173 }
+    ],
+    events: [{ x: 8310 }],
+    goal: { x: 10170, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 18 关 · 逆鳞",
+    width: 8630, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-20, y:460, w:440, set:"AB" },
+      { x:420, y:96, w:560, set:"B" },
+      { x:740, y:96, w:800, set:"A" },
+      { x:400, y:460, w:1140, set:"AB" },
+      { x:1520, y:460, w:2020, set:"AB" },
+      { x:3520, y:460, w:1710, set:"AB" },
+      { x:5210, y:460, w:60, set:"AB" },
+      { x:5280, y:200, w:260, set:"AB" },
+      { x:5600, y:340, w:260, set:"AB" },
+      { x:5965, y:200, w:255, set:"AB" },
+      { x:6250, y:460, w:300, set:"AB" },
+      { x:6530, y:460, w:1500, set:"AB" },
+      { x:7990, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:700, y:120, set:"A", hang:true },
+      { x:1940, y:460, set:"A" },
+      { x:2360, y:460, set:"B" },
+      { x:2780, y:460, set:"A" },
+      { x:3200, y:460, set:"B" },
+      { x:7070, y:460, set:"A" },
+      { x:7630, y:460, set:"A" }
+    ],
+    movers: [
+      { x:3970, y:390, set:"A", axis:"y", dist:70, speed:2, phase:-38.532 },
+      { x:4430, y:390, set:"B", axis:"y", dist:70, speed:2, phase:-43.25 },
+      { x:4890, y:390, set:"A", axis:"y", dist:70, speed:2.1, phase:-50.445 },
+      { x:7110, y:390, set:"B", axis:"y", dist:70, speed:2, phase:-73.878 }
+    ],
+    inverts: [{ x0: 380, x1: 1560 }, { x0: 5190, x1: 6570 }],
+    locks: [{ x0: 6870, x1: 7930 }],
+    goal: { x: 8310, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 19 关 · 回气",
+    width: 6475, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-20, y:460, w:440, set:"AB" },
+      { x:400, y:460, w:130, set:"AB" },
+      { x:830, y:460, w:340, set:"AB" },
+      { x:1150, y:460, w:260, set:"AB" },
+      { x:1390, y:460, w:130, set:"AB" },
+      { x:1820, y:460, w:340, set:"AB" },
+      { x:2140, y:460, w:130, set:"AB" },
+      { x:2570, y:460, w:340, set:"AB" },
+      { x:2890, y:460, w:60, set:"AB" },
+      { x:2960, y:200, w:270, set:"AB" },
+      { x:3290, y:340, w:270, set:"AB" },
+      { x:3665, y:200, w:260, set:"AB" },
+      { x:3955, y:460, w:300, set:"AB" },
+      { x:4235, y:460, w:1620, set:"AB" },
+      { x:5835, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:3095, y:222, set:"A", hang:true },
+      { x:4655, y:460, set:"A" },
+      { x:5085, y:460, set:"B" },
+      { x:5515, y:460, set:"A" }
+    ],
+    orbs: [{ x: 625, y: 305 }, { x: 1615, y: 305 }, { x: 2365, y: 305 }],
+    goal: { x: 6155, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 20 关 · 无间",
+    width: 10295, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-20, y:460, w:440, set:"AB" },
+      { x:400, y:460, w:2170, set:"AB" },
+      { x:2550, y:460, w:1710, set:"AB" },
+      { x:4260, y:96, w:600, set:"B" },
+      { x:4240, y:460, w:260, set:"AB" },
+      { x:4880, y:460, w:260, set:"AB" },
+      { x:5120, y:460, w:280, set:"AB" },
+      { x:5380, y:460, w:60, set:"AB" },
+      { x:5450, y:200, w:255, set:"AB" },
+      { x:5765, y:340, w:255, set:"AB" },
+      { x:6125, y:200, w:250, set:"AB" },
+      { x:6405, y:460, w:300, set:"AB" },
+      { x:6685, y:460, w:1250, set:"AB" },
+      { x:7915, y:460, w:1780, set:"AB" },
+      { x:9655, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:850, y:460, set:"A" },
+      { x:1310, y:460, set:"B" },
+      { x:1770, y:460, set:"A" },
+      { x:2230, y:460, set:"B" },
+      { x:9015, y:460, set:"A" },
+      { x:9355, y:460, set:"B" }
+    ],
+    movers: [
+      { x:3000, y:390, set:"B", axis:"y", dist:70, speed:2, phase:-22.866 },
+      { x:3460, y:390, set:"A", axis:"y", dist:70, speed:2, phase:-27.584 },
+      { x:3920, y:390, set:"B", axis:"y", dist:70, speed:2.1, phase:-33.996 },
+      { x:7135, y:390, set:"A", axis:"y", dist:70, speed:2.1, phase:-68.619 },
+      { x:7595, y:390, set:"B", axis:"y", dist:70, speed:2.1, phase:-73.573 }
+    ],
+    speeds: [{ x0: 360, x1: 2610, mul: 1.35 }],
+    events: [{ x: 8115 }],
+    goal: { x: 9975, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 21 关 · 试炼场",
+    width: 11030, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-20, y:460, w:440, set:"AB" },
+      { x:400, y:460, w:2510, set:"AB" },
+      { x:2890, y:460, w:1520, set:"AB" },
+      { x:4370, y:460, w:1600, set:"AB" },
+      { x:5950, y:460, w:2170, set:"AB" },
+      { x:8100, y:460, w:1670, set:"AB" },
+      { x:9770, y:96, w:640, set:"A" },
+      { x:9750, y:460, w:660, set:"AB" },
+      { x:10390, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:850, y:460, set:"A" },
+      { x:1280, y:460, set:"B" },
+      { x:1710, y:460, set:"A" },
+      { x:2140, y:460, set:"B" },
+      { x:2570, y:460, set:"A" },
+      { x:3430, y:460, set:"B" },
+      { x:4010, y:460, set:"B" },
+      { x:4790, y:460, set:"A" },
+      { x:5210, y:460, set:"B" },
+      { x:5630, y:460, set:"A" },
+      { x:8550, y:460, set:"B" },
+      { x:8990, y:460, set:"A" },
+      { x:9430, y:460, set:"B" }
+    ],
+    movers: [
+      { x:3470, y:390, set:"A", axis:"y", dist:70, speed:2, phase:-29.248 },
+      { x:6400, y:390, set:"B", axis:"y", dist:70, speed:2.1, phase:-59.045 },
+      { x:6860, y:390, set:"A", axis:"y", dist:70, speed:2.1, phase:-63.998 },
+      { x:7320, y:390, set:"B", axis:"y", dist:70, speed:2.2, phase:-72.311 },
+      { x:7780, y:390, set:"A", axis:"y", dist:70, speed:2.2, phase:-77.5 },
+      { x:10090, y:165, set:"B", axis:"y", dist:45, speed:2.2, phase:-106.703, hang:true }
+    ],
+    inverts: [{ x0: 8080, x1: 9790 }],
+    locks: [{ x0: 3230, x1: 4310 }],
+    speeds: [{ x0: 360, x1: 2950, mul: 1.4 }],
+    goal: { x: 10710, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 22 关 · 双生劫",
+    width: 8710, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-20, y:460, w:480, set:"AB" },
+      { x:440, y:460, w:60, set:"AB" },
+      { x:510, y:200, w:250, set:"AB" },
+      { x:820, y:340, w:250, set:"AB" },
+      { x:1175, y:200, w:245, set:"AB" },
+      { x:1450, y:460, w:300, set:"AB" },
+      { x:1730, y:460, w:1690, set:"AB" },
+      { x:3400, y:460, w:1600, set:"AB" },
+      { x:5000, y:96, w:580, set:"B" },
+      { x:4980, y:460, w:260, set:"AB" },
+      { x:5600, y:460, w:260, set:"AB" },
+      { x:5840, y:460, w:1520, set:"AB" },
+      { x:7320, y:460, w:130, set:"AB" },
+      { x:7750, y:460, w:340, set:"AB" },
+      { x:8070, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:3820, y:460, set:"B" },
+      { x:4240, y:460, set:"A" },
+      { x:4660, y:460, set:"B" },
+      { x:5290, y:120, set:"A", hang:true },
+      { x:6380, y:460, set:"B" },
+      { x:6960, y:460, set:"B" }
+    ],
+    movers: [
+      { x:2180, y:390, set:"A", axis:"y", dist:70, speed:2.2, phase:-22.347 },
+      { x:2630, y:390, set:"B", axis:"y", dist:70, speed:2.2, phase:-27.424 },
+      { x:3080, y:390, set:"A", axis:"y", dist:70, speed:2.3, phase:-34.05 },
+      { x:6420, y:390, set:"A", axis:"y", dist:70, speed:2.2, phase:-73.325 }
+    ],
+    inverts: [{ x0: 420, x1: 1770 }],
+    locks: [{ x0: 6180, x1: 7260 }],
+    orbs: [{ x: 7545, y: 305 }],
+    goal: { x: 8390, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 23 关 · 千针阵",
+    width: 11200, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-20, y:460, w:440, set:"AB" },
+      { x:400, y:460, w:2730, set:"AB" },
+      { x:3130, y:96, w:700, set:"A" },
+      { x:3110, y:460, w:260, set:"AB" },
+      { x:3850, y:460, w:260, set:"AB" },
+      { x:4090, y:460, w:2140, set:"AB" },
+      { x:6210, y:460, w:1670, set:"AB" },
+      { x:7860, y:460, w:60, set:"AB" },
+      { x:7930, y:200, w:235, set:"AB" },
+      { x:8225, y:340, w:230, set:"AB" },
+      { x:8560, y:200, w:230, set:"AB" },
+      { x:8820, y:460, w:300, set:"AB" },
+      { x:9100, y:460, w:1500, set:"AB" },
+      { x:10560, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:840, y:460, set:"A" },
+      { x:1165, y:460, set:"B" },
+      { x:1490, y:460, set:"A" },
+      { x:1815, y:460, set:"B" },
+      { x:2140, y:460, set:"A" },
+      { x:2465, y:460, set:"B" },
+      { x:2790, y:460, set:"A" },
+      { x:6660, y:460, set:"A" },
+      { x:7100, y:460, set:"B" },
+      { x:7540, y:460, set:"A" },
+      { x:9640, y:460, set:"A" },
+      { x:10200, y:460, set:"A" }
+    ],
+    movers: [
+      { x:3430, y:165, set:"B", axis:"y", dist:45, speed:2.3, phase:-41.32, hang:true },
+      { x:3650, y:165, set:"B", axis:"y", dist:45, speed:2.4, phase:-45.755, hang:true },
+      { x:4540, y:390, set:"B", axis:"y", dist:70, speed:2.3, phase:-51.27 },
+      { x:4990, y:390, set:"A", axis:"y", dist:70, speed:2.3, phase:-56.578 },
+      { x:5440, y:390, set:"B", axis:"y", dist:70, speed:2.4, phase:-64.645 },
+      { x:5890, y:390, set:"A", axis:"y", dist:70, speed:2.4, phase:-70.183 },
+      { x:9680, y:390, set:"B", axis:"y", dist:70, speed:2.3, phase:-115.037 }
+    ],
+    inverts: [{ x0: 6190, x1: 7900 }],
+    locks: [{ x0: 9440, x1: 10500 }],
+    goal: { x: 10880, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 24 关 · 逆鳞甲",
+    width: 13740, spawn: { x: 60, y: 400 },
+    hint: "",
+    ratchet: { x0: 9860, x1: 12860 },
+    platforms: [
+      { x:-20, y:460, w:440, set:"AB" },
+      { x:400, y:460, w:2140, set:"AB" },
+      { x:2520, y:460, w:1600, set:"AB" },
+      { x:4100, y:460, w:1320, set:"AB" },
+      { x:5380, y:460, w:1780, set:"AB" },
+      { x:7120, y:460, w:130, set:"AB" },
+      { x:7550, y:460, w:340, set:"AB" },
+      { x:7870, y:460, w:1690, set:"AB" },
+      { x:9520, y:36, w:3300, set:"AB" },
+      { x:9540, y:460, w:620, set:"AB" },
+      { x:10160, y:460, w:260, set:"B" },
+      { x:10420, y:460, w:560, set:"AB" },
+      { x:11380, y:460, w:340, set:"A" },
+      { x:11720, y:460, w:560, set:"AB" },
+      { x:12280, y:460, w:260, set:"B" },
+      { x:12540, y:460, w:580, set:"AB" },
+      { x:13100, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:850, y:460, set:"A" },
+      { x:1300, y:460, set:"B" },
+      { x:1750, y:460, set:"A" },
+      { x:2200, y:460, set:"B" },
+      { x:2940, y:460, set:"B" },
+      { x:3360, y:460, set:"A" },
+      { x:3780, y:460, set:"B" },
+      { x:4640, y:460, set:"B" },
+      { x:6480, y:460, set:"A" },
+      { x:6820, y:460, set:"B" },
+      { x:10610, y:460, set:"A" },
+      { x:11960, y:460, set:"B" }
+    ],
+    movers: [
+      { x:4680, y:390, set:"A", axis:"y", dist:70, speed:2.1, phase:-45.406 },
+      { x:8320, y:390, set:"A", axis:"y", dist:70, speed:2.3, phase:-89.372 },
+      { x:8770, y:390, set:"B", axis:"y", dist:70, speed:2.3, phase:-94.68 },
+      { x:9220, y:390, set:"A", axis:"y", dist:70, speed:2.4, phase:-104.403 }
+    ],
+    inverts: [{ x0: 380, x1: 2560 }],
+    locks: [{ x0: 4440, x1: 5320 }],
+    speeds: [{ x0: 360, x1: 2580, mul: 1.35 }],
+    events: [{ x: 5580 }],
+    orbs: [{ x: 7345, y: 305 }],
+    goal: { x: 13420, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 25 关 · 修罗",
+    width: 12480, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-20, y:460, w:440, set:"AB" },
+      { x:400, y:460, w:1780, set:"AB" },
+      { x:2140, y:460, w:1500, set:"AB" },
+      { x:3600, y:460, w:1990, set:"AB" },
+      { x:5570, y:460, w:1780, set:"AB" },
+      { x:7310, y:460, w:130, set:"AB" },
+      { x:7740, y:460, w:340, set:"AB" },
+      { x:8060, y:460, w:1670, set:"AB" },
+      { x:9710, y:460, w:60, set:"AB" },
+      { x:9780, y:200, w:230, set:"AB" },
+      { x:10070, y:340, w:230, set:"AB" },
+      { x:10340, y:460, w:300, set:"AB" },
+      { x:10620, y:460, w:1240, set:"AB" },
+      { x:11840, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:1500, y:460, set:"A" },
+      { x:1840, y:460, set:"B" },
+      { x:2680, y:460, set:"A" },
+      { x:3240, y:460, set:"A" },
+      { x:4020, y:460, set:"B" },
+      { x:4430, y:460, set:"A" },
+      { x:4840, y:460, set:"B" },
+      { x:5250, y:460, set:"A" },
+      { x:6670, y:460, set:"B" },
+      { x:7010, y:460, set:"A" },
+      { x:8510, y:460, set:"A" },
+      { x:8950, y:460, set:"B" },
+      { x:9390, y:460, set:"A" }
+    ],
+    movers: [
+      { x:2720, y:390, set:"B", axis:"y", dist:70, speed:2.1, phase:-30.217 },
+      { x:11070, y:390, set:"B", axis:"y", dist:70, speed:2.4, phase:-133.937 },
+      { x:11520, y:390, set:"A", axis:"y", dist:70, speed:2.4, phase:-139.475 }
+    ],
+    inverts: [{ x0: 8040, x1: 9750 }],
+    locks: [{ x0: 2480, x1: 3540 }],
+    events: [{ x: 600 }, { x: 5770 }],
+    orbs: [{ x: 7535, y: 305 }],
+    goal: { x: 12160, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 26 关 · 炼狱门",
+    width: 9945, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-20, y:460, w:440, set:"AB" },
+      { x:400, y:460, w:130, set:"AB" },
+      { x:830, y:460, w:340, set:"AB" },
+      { x:1150, y:460, w:60, set:"AB" },
+      { x:1220, y:200, w:225, set:"AB" },
+      { x:1505, y:340, w:220, set:"AB" },
+      { x:1830, y:200, w:215, set:"AB" },
+      { x:2075, y:460, w:300, set:"AB" },
+      { x:2355, y:460, w:130, set:"AB" },
+      { x:2785, y:460, w:340, set:"AB" },
+      { x:3125, y:96, w:600, set:"B" },
+      { x:3105, y:460, w:260, set:"AB" },
+      { x:3745, y:460, w:260, set:"AB" },
+      { x:3985, y:460, w:2140, set:"AB" },
+      { x:6105, y:460, w:1780, set:"AB" },
+      { x:7845, y:460, w:1500, set:"AB" },
+      { x:9305, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:1615, y:340, set:"B" },
+      { x:3425, y:120, set:"A", hang:true },
+      { x:7205, y:460, set:"A" },
+      { x:7545, y:460, set:"B" },
+      { x:8385, y:460, set:"B" },
+      { x:8945, y:460, set:"B" }
+    ],
+    movers: [
+      { x:4435, y:390, set:"A", axis:"y", dist:70, speed:2.2, phase:-47.788 },
+      { x:4885, y:390, set:"B", axis:"y", dist:70, speed:2.2, phase:-52.865 },
+      { x:5335, y:390, set:"A", axis:"y", dist:70, speed:2.3, phase:-60.647 },
+      { x:5785, y:390, set:"B", axis:"y", dist:70, speed:2.3, phase:-65.955 },
+      { x:8425, y:390, set:"A", axis:"y", dist:70, speed:2.3, phase:-100.235 }
+    ],
+    locks: [{ x0: 8185, x1: 9245 }],
+    events: [{ x: 6305 }],
+    orbs: [{ x: 625, y: 305 }, { x: 2580, y: 305 }],
+    goal: { x: 9625, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 27 关 · 九死",
+    width: 12905, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-20, y:460, w:440, set:"AB" },
+      { x:400, y:460, w:2590, set:"AB" },
+      { x:2970, y:460, w:1690, set:"AB" },
+      { x:4660, y:96, w:660, set:"B" },
+      { x:4640, y:460, w:260, set:"AB" },
+      { x:5340, y:460, w:260, set:"AB" },
+      { x:5580, y:460, w:1580, set:"AB" },
+      { x:7140, y:460, w:60, set:"AB" },
+      { x:7210, y:200, w:215, set:"AB" },
+      { x:7485, y:340, w:210, set:"AB" },
+      { x:7800, y:200, w:205, set:"AB" },
+      { x:8035, y:460, w:300, set:"AB" },
+      { x:8315, y:460, w:1780, set:"AB" },
+      { x:10055, y:460, w:130, set:"AB" },
+      { x:10485, y:460, w:340, set:"AB" },
+      { x:10805, y:460, w:1500, set:"AB" },
+      { x:12265, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:3420, y:460, set:"B" },
+      { x:3870, y:460, set:"A" },
+      { x:4320, y:460, set:"B" },
+      { x:6000, y:460, set:"A" },
+      { x:6410, y:460, set:"B" },
+      { x:6820, y:460, set:"A" },
+      { x:9415, y:460, set:"A" },
+      { x:9755, y:460, set:"B" },
+      { x:11345, y:460, set:"A" },
+      { x:11905, y:460, set:"A" }
+    ],
+    movers: [
+      { x:850, y:390, set:"A", axis:"y", dist:70, speed:2.5, phase:-8.557 },
+      { x:1300, y:390, set:"B", axis:"y", dist:70, speed:2.5, phase:-14.327 },
+      { x:1750, y:390, set:"A", axis:"y", dist:70, speed:2.6, phase:-20.963 },
+      { x:2200, y:390, set:"B", axis:"y", dist:70, speed:2.6, phase:-26.963 },
+      { x:2650, y:390, set:"A", axis:"y", dist:70, speed:2.7, phase:-34.291 },
+      { x:4990, y:165, set:"A", axis:"y", dist:45, speed:2.6, phase:-60.394, hang:true },
+      { x:11385, y:390, set:"B", axis:"y", dist:70, speed:2.5, phase:-140.119 }
+    ],
+    locks: [{ x0: 11145, x1: 12205 }],
+    speeds: [{ x0: 2930, x1: 4700, mul: 1.45 }],
+    events: [{ x: 8515 }],
+    orbs: [{ x: 10280, y: 305 }],
+    goal: { x: 12585, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 28 关 · 无间道",
+    width: 14420, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-20, y:460, w:480, set:"AB" },
+      { x:440, y:460, w:2110, set:"AB" },
+      { x:2530, y:460, w:1780, set:"AB" },
+      { x:4270, y:460, w:2060, set:"AB" },
+      { x:6290, y:460, w:2140, set:"AB" },
+      { x:8410, y:460, w:130, set:"AB" },
+      { x:8840, y:460, w:340, set:"AB" },
+      { x:9160, y:460, w:1780, set:"AB" },
+      { x:10900, y:460, w:1690, set:"AB" },
+      { x:12570, y:460, w:60, set:"AB" },
+      { x:12640, y:200, w:225, set:"AB" },
+      { x:12925, y:340, w:220, set:"AB" },
+      { x:13250, y:200, w:220, set:"AB" },
+      { x:13500, y:460, w:300, set:"AB" },
+      { x:13780, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:890, y:460, set:"A" },
+      { x:1330, y:460, set:"B" },
+      { x:1770, y:460, set:"A" },
+      { x:2210, y:460, set:"B" },
+      { x:3630, y:460, set:"A" },
+      { x:3970, y:460, set:"B" },
+      { x:4810, y:460, set:"B" },
+      { x:5370, y:460, set:"B" },
+      { x:5930, y:460, set:"B" },
+      { x:6740, y:460, set:"B" },
+      { x:7190, y:460, set:"A" },
+      { x:7640, y:460, set:"B" },
+      { x:8090, y:460, set:"A" },
+      { x:10260, y:460, set:"B" },
+      { x:10600, y:460, set:"A" }
+    ],
+    movers: [
+      { x:4850, y:390, set:"A", axis:"y", dist:70, speed:2.3, phase:-58.068 },
+      { x:11350, y:390, set:"A", axis:"y", dist:70, speed:2.4, phase:-131.362 },
+      { x:11800, y:390, set:"B", axis:"y", dist:70, speed:2.4, phase:-136.9 },
+      { x:12250, y:390, set:"A", axis:"y", dist:70, speed:2.5, phase:-148.439 }
+    ],
+    inverts: [{ x0: 420, x1: 2570 }],
+    locks: [{ x0: 4610, x1: 6230 }],
+    speeds: [{ x0: 6250, x1: 8470, mul: 1.3 }],
+    events: [{ x: 2730 }, { x: 9360 }],
+    orbs: [{ x: 8635, y: 305 }],
+    goal: { x: 14100, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 29 关 · 轮回",
+    width: 13800, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-20, y:460, w:440, set:"AB" },
+      { x:400, y:460, w:2140, set:"AB" },
+      { x:2520, y:460, w:2140, set:"AB" },
+      { x:4640, y:460, w:1670, set:"AB" },
+      { x:6290, y:460, w:1780, set:"AB" },
+      { x:8030, y:460, w:130, set:"AB" },
+      { x:8460, y:460, w:340, set:"AB" },
+      { x:8800, y:96, w:560, set:"B" },
+      { x:9120, y:96, w:800, set:"A" },
+      { x:8780, y:460, w:260, set:"AB" },
+      { x:9940, y:460, w:260, set:"AB" },
+      { x:10180, y:460, w:1500, set:"AB" },
+      { x:11640, y:460, w:130, set:"AB" },
+      { x:12070, y:460, w:340, set:"AB" },
+      { x:12390, y:460, w:790, set:"AB" },
+      { x:13160, y:460, w:520, set:"AB" }
+    ],
+    spikes: [
+      { x:850, y:460, set:"A" },
+      { x:1300, y:460, set:"B" },
+      { x:1750, y:460, set:"A" },
+      { x:2200, y:460, set:"B" },
+      { x:5090, y:460, set:"B" },
+      { x:5530, y:460, set:"A" },
+      { x:5970, y:460, set:"B" },
+      { x:7390, y:460, set:"A" },
+      { x:7730, y:460, set:"B" },
+      { x:10720, y:460, set:"A" },
+      { x:11280, y:460, set:"A" }
+    ],
+    movers: [
+      { x:2970, y:390, set:"B", axis:"y", dist:70, speed:2.4, phase:-26.79 },
+      { x:3420, y:390, set:"A", axis:"y", dist:70, speed:2.4, phase:-32.328 },
+      { x:3870, y:390, set:"B", axis:"y", dist:70, speed:2.5, phase:-39.51 },
+      { x:4320, y:390, set:"A", axis:"y", dist:70, speed:2.5, phase:-45.279 },
+      { x:10760, y:390, set:"B", axis:"y", dist:70, speed:2.4, phase:-125.808 },
+      { x:12840, y:390, set:"B", axis:"y", dist:70, speed:2.5, phase:-154.51 }
+    ],
+    inverts: [{ x0: 4620, x1: 6330 }],
+    locks: [{ x0: 10520, x1: 11580 }],
+    speeds: [{ x0: 360, x1: 2580, mul: 1.4 }],
+    events: [{ x: 6490 }],
+    orbs: [{ x: 8255, y: 305 }, { x: 11865, y: 305 }],
+    goal: { x: 13480, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  {
+    name: "第 30 关 · 地狱",
+    width: 15090, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-20, y:460, w:440, set:"AB" },
+      { x:400, y:460, w:1980, set:"AB" },
+      { x:2360, y:460, w:2590, set:"AB" },
+      { x:4930, y:460, w:2140, set:"AB" },
+      { x:7050, y:460, w:1670, set:"AB" },
+      { x:8700, y:460, w:1780, set:"AB" },
+      { x:10440, y:460, w:130, set:"AB" },
+      { x:10870, y:460, w:340, set:"AB" },
+      { x:11190, y:460, w:1500, set:"AB" },
+      { x:12650, y:460, w:1780, set:"AB" },
+      { x:14410, y:96, w:620, set:"B" },
+      { x:14390, y:460, w:260, set:"AB" },
+      { x:15050, y:460, w:260, set:"AB" }
+    ],
+    spikes: [
+      { x:840, y:460, set:"A" },
+      { x:1140, y:460, set:"B" },
+      { x:1440, y:460, set:"A" },
+      { x:1740, y:460, set:"B" },
+      { x:2040, y:460, set:"A" },
+      { x:5380, y:460, set:"A" },
+      { x:5830, y:460, set:"B" },
+      { x:6280, y:460, set:"A" },
+      { x:6730, y:460, set:"B" },
+      { x:7500, y:460, set:"B" },
+      { x:7940, y:460, set:"A" },
+      { x:8380, y:460, set:"B" },
+      { x:9800, y:460, set:"A" },
+      { x:10140, y:460, set:"B" },
+      { x:11730, y:460, set:"B" },
+      { x:12290, y:460, set:"B" },
+      { x:13750, y:460, set:"B" },
+      { x:14090, y:460, set:"A" },
+      { x:14720, y:120, set:"A", hang:true }
+    ],
+    movers: [
+      { x:2810, y:390, set:"B", axis:"y", dist:70, speed:2.7, phase:-36.506 },
+      { x:3260, y:390, set:"A", axis:"y", dist:70, speed:2.7, phase:-42.737 },
+      { x:3710, y:390, set:"B", axis:"y", dist:70, speed:2.8, phase:-50.839 },
+      { x:4160, y:390, set:"A", axis:"y", dist:70, speed:2.8, phase:-57.301 },
+      { x:4610, y:390, set:"B", axis:"y", dist:70, speed:2.9, phase:-66.096 },
+      { x:11770, y:390, set:"A", axis:"y", dist:70, speed:2.6, phase:-148.282 }
+    ],
+    inverts: [{ x0: 7030, x1: 8740 }],
+    locks: [{ x0: 11530, x1: 12590 }],
+    speeds: [{ x0: 4890, x1: 7110, mul: 1.5 }],
+    events: [{ x: 8900 }, { x: 12850 }],
+    orbs: [{ x: 10665, y: 305 }],
+    goal: { x: 14820, y: 96, w: 44, h: 70, surf: 118, ceil:true }
+  }
+];
 
-/* ---------------- 状态（单一事实源） ---------------- */
-let frame = 0;                    // 已模拟步数；模拟时钟 time = frame*STEP
+/* Beginner tutorial: steps live ON the real levels, highlight the real
+   controls (the shift pads / keys), and advance ONLY on real play —
+   reaching a position or actually shifting the world to a target state.
+   No timers, no click-anywhere advance. */
+const TUT = [
+  [
+    { at: 0,    text: "前面那座桥只在「黄昏」里。点「前移」再过去。", hl: "F", done: { ring: 1 } },
+    { at: 0,    text: "在这儿移位，脚下会长刺——移完千万别停。", done: { x: 1080 } }
+  ],
+  [
+    { at: 0,    text: "这就是你。你自己会跑——先看一会儿。", done: { x: 300 } },
+    { at: 0,    text: "点右下角「前移」——让世界向前移一格。", hl: "F", done: { ring: 1 } },
+    { at: 0,    text: "虚线桥变实了。那根红刺呢？在这个状态里它不是真的。", done: { x: 1000 } },
+    { at: 1000, text: "下一座桥只存在于「黎明」。点左下角「后移」退回去。", hl: "B", done: { ring: 0 } },
+    { at: 0,    text: "前面那根刺只在「黄昏」是真的。你现在是黎明——直接穿过去。", done: { x: 2350 } },
+    { at: 2350, text: "最后一个缺口：桥在「黄昏」里。点「前移」。", hl: "F", done: { ring: 1 } },
+    { at: 0,    text: "整个游戏就这么多。跑到旗子那儿去。", done: { x: 2900 } }
+  ],
+  [
+    { at: 0,    text: "新规则：重力也是世界状态的一部分。", done: { x: 330 } },
+    { at: 330,  text: "地板到头了。连点两下「前移」——翻转重力，去天花板上跑。", hl: "F", done: { ring: 2 } },
+    { at: 0,    text: "倒过来规则一样：虚线就是另一个状态。", done: { x: 1250 } },
+    { at: 1150, text: "下一段天花板只存在于「虚空」。点「前移」。", hl: "F", done: { ring: 3 } },
+    { at: 0,    text: "那根倒挂的刺在虚空里不是真的。继续走。", done: { x: 1900 } },
+    { at: 1900, text: "现在回到「夜幕」。点「后移」。", hl: "B", done: { ring: 2 } },
+    { at: 2500, text: "地板快回来了。移位到黎明或黄昏，落下去。", done: { ring: 0 } },
+    { at: 2700, text: "稳住。旗子就在前面。", done: { x: 3150 } }
+  ],
+  [
+    { at: 0,    text: "现在全部一起来。记住：连移两格 = 翻转重力。", done: { x: 300 } },
+    { at: 1400, text: "完整循环：状态环没有头尾，虚空之后又是黎明。", done: { ring: 0 } }
+  ],
+  [
+    { at: 0,    text: "棘轮区：在红区里，「后移」被锁定，状态环只能向前。", done: { x: 420 } },
+    { at: 1150, text: "长缺口需要回到黎明——但你退不回去。只能向前绕一整圈，走头顶的轨道。", done: { ring: 2 } }
+  ],
+  [
+    { at: 0,    text: "错峰：地板和天花板轮着用，连翻两次是常态。", done: { x: 420 } }
+  ],
+  [
+    { at: 0,    text: "尖刺交织：这块地板不会变。你的状态决定哪些刺是真的。", done: { x: 220 } }
+  ],
+  [
+    { at: 0,    text: "浮岛两面都能用：黎明时站在上面，夜幕时挂在下面。", done: { x: 420 } }
+  ],
+  [
+    { at: 0,    text: "双棘轮：两段红区，中间一段能喘口气。规矩一样——只能向前。", done: { x: 420 } }
+  ],
+  [
+    { at: 0,    text: "试炼。你学会的全部，一次跑完。", done: { x: 420 } },
+    { at: 2350, text: "又是棘轮区——只能向前，一直到旗子。", done: { x: 2950 } }
+  ],
+  [
+    { at: 0,    text: "四相终局：全部机制，一次跑完。稳住节奏。", done: { x: 420 } }
+  ]
+];
+let tutIdx = 0;
+function tutSteps(){ return TUT[levelIdx] || []; }
+function tutCurrent(){
+  const steps = tutSteps();
+  if (tutIdx >= steps.length) return null;
+  const s = steps[tutIdx];
+  return player.x >= (s.at || 0) ? s : null;
+}
+function tutAdvance(){
+  const s = tutCurrent();
+  if (!s) return;
+  if (s.done.x !== undefined && player.x >= s.done.x) tutIdx++;
+  else if (s.done.ring !== undefined && ring === s.done.ring) tutIdx++;
+}
+
+/* ---------------- state ---------------- */
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+let screen = "title";           // title | play | clear | win
+let ring = 0;                   // world state, ONLY changed by shift()
+let levelIdx = 0;
 let deaths = 0;
-let won = false;
-let deathFrame = -1, respawnFrame = -1;
-const P = {
-  x: LEVEL.spawn.x, y: LEVEL.spawn.y, vx: 0, vy: 0,
-  grounded: true, face: 1,
-  coyote: 0, buffer: 0, cutDone: true,
-  dead: false, freeze: 0
-};
-const keys = { left: false, right: false, jump: false };
-let prevJump = false;
+let runTime = 0, clearTimer = 0;
+let camX = 0, shake = 0, flash = 0;
+let particles = [];
+const player = { x:0, y:0, vx:0, vy:0, grounded:false, face:1 };
+let level = LEVELS[0];
 
-/* ---------------- 输入 ---------------- */
-function setKey(k, v) { keys[k] = !!v; }
-const KEYMAP = { ArrowLeft: "left", KeyA: "left", ArrowRight: "right", KeyD: "right",
-                 Space: "jump", ArrowUp: "jump", KeyW: "jump" };
-addEventListener("keydown", e => { const k = KEYMAP[e.code]; if (k) { setKey(k, true); e.preventDefault(); } });
-addEventListener("keyup",   e => { const k = KEYMAP[e.code]; if (k) { setKey(k, false); e.preventDefault(); } });
-function bindBtn(id, k) {
-  const el = document.getElementById(id);
-  const on  = e => { e.preventDefault(); setKey(k, true);  el.classList.add("on"); };
-  const off = e => { e.preventDefault(); setKey(k, false); el.classList.remove("on"); };
-  el.addEventListener("pointerdown", on);
-  el.addEventListener("pointerup", off);
-  el.addEventListener("pointercancel", off);
-  el.addEventListener("pointerleave", off);
-  el.addEventListener("contextmenu", e => e.preventDefault());
-}
-bindBtn("btnL", "left"); bindBtn("btnR", "right"); bindBtn("btnJ", "jump");
-
-/* ---------------- 物理步 ---------------- */
-function overlap(a, b) { return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
-function pbox() { return { x: P.x, y: P.y, w: CFG.pw, h: CFG.ph }; }
-
-function die() {
-  if (P.dead) return;
-  P.dead = true; P.freeze = CFG.freezeSteps;
-  P.vx = 0; P.vy = 0;
-  deaths++; deathFrame = frame;
-}
-function respawn() {
-  P.x = LEVEL.spawn.x; P.y = LEVEL.spawn.y;
-  P.vx = 0; P.vy = 0; P.grounded = true;
-  P.coyote = 0; P.buffer = 0; P.cutDone = true;
-  P.dead = false; respawnFrame = frame;
+/* 进度存档：已解锁到的最高关卡序号。写失败绝不堵流程（存档纪律 B7）——
+   读不到就从第 1 关开始，写不进就只当本次会话有效。 */
+let unlocked = 0;
+try { unlocked = Math.max(0, Math.min(LEVELS.length - 1, parseInt(localStorage.getItem("youkeng_save_v1") || "0", 10) || 0)); } catch(e) {}
+function saveUnlock(){ try { localStorage.setItem("youkeng_save_v1", String(unlocked)); } catch(e) {} }
+// 测试直达：?unlock=30 打开即全关解锁（并写入存档，之后普通链接也保持解锁）
+try { if (new URLSearchParams(location.search).get("unlock") === "30") { unlocked = LEVELS.length - 1; saveUnlock(); } } catch(e) {}
+let titleBtns = [];
+let uiBtns = [];
+let titlePanel = null;          // null | "board" | "ach"
+function startLevel(i){
+  audio();
+  runTime = 0; deaths = 0; runShifts = 0; achToast = "";
+  screen = "play"; loadLevel(i); Music.start();
 }
 
-function stepOnce() {
-  frame++;
-  /* 跳跃按下沿 → 写入缓冲（任何来源的输入都走这一条路） */
-  if (keys.jump && !prevJump) P.buffer = CFG.bufferSteps;
-  prevJump = keys.jump;
+/* ---------------- 计数 / 设置 / 成绩 / 成就（全部本地，写失败不堵流程） ---------------- */
+let runShifts = 0;              // 本轮全程移位次数
+let levelShifts = 0, levelTime = 0, levelDeathsStart = 0;
+let sfxOn = true;
+const settings = { music: true, sfx: true };
+try {
+  const s = JSON.parse(localStorage.getItem("youkeng_settings_v1") || "null");
+  if (s) { settings.music = s.music !== false; settings.sfx = s.sfx !== false; }
+} catch(e) {}
+sfxOn = settings.sfx;
+function saveSettings(){ try { localStorage.setItem("youkeng_settings_v1", JSON.stringify(settings)); } catch(e) {} }
 
-  if (P.dead) {
-    P.freeze--;
-    if (P.freeze <= 0) respawn();
+let records = { lv: [], run: { t: null, s: null } };
+try {
+  const r = JSON.parse(localStorage.getItem("youkeng_records_v1") || "null");
+  if (r && Array.isArray(r.lv) && r.run) records = r;
+} catch(e) {}
+function saveRecords(){ try { localStorage.setItem("youkeng_records_v1", JSON.stringify(records)); } catch(e) {} }
+
+const ACH = [
+  { id: "first",  name: "第一步",   desc: "通关第 1 关" },
+  { id: "half",   name: "过半",     desc: "通关第 15 关" },
+  { id: "all",    name: "全境移位", desc: "通关全部 31 关" },
+  { id: "clean",  name: "毫发无损", desc: "任意一关零死亡通关" },
+  { id: "frugal", name: "精打细算", desc: "全程不超过 720 次移位通关" },
+  { id: "swift",  name: "疾风",     desc: "全程 1700 秒内通关" }
+];
+let achDone = [];
+try { achDone = JSON.parse(localStorage.getItem("youkeng_ach_v1") || "[]"); if (!Array.isArray(achDone)) achDone = []; } catch(e) {}
+let achToast = "";
+function unlockAch(id){
+  if (achDone.includes(id)) return;
+  achDone.push(id);
+  try { localStorage.setItem("youkeng_ach_v1", JSON.stringify(achDone)); } catch(e) {}
+  const a = ACH.find(a => a.id === id);
+  if (a) achToast = "成就达成 · " + a.name;
+}
+function commitLevel(){
+  const rec = records.lv[levelIdx] || { t: null, s: null };
+  if (rec.t === null || levelTime < rec.t) rec.t = Math.round(levelTime * 10) / 10;
+  if (rec.s === null || levelShifts < rec.s) rec.s = levelShifts;
+  records.lv[levelIdx] = rec; saveRecords();
+  if (levelIdx === 0) unlockAch("first");
+  if (levelIdx === 14) unlockAch("half");
+  if (deaths === levelDeathsStart) unlockAch("clean");
+}
+function commitRun(){
+  if (records.run.t === null || runTime < records.run.t) records.run.t = Math.round(runTime * 10) / 10;
+  if (records.run.s === null || runShifts < records.run.s) records.run.s = runShifts;
+  saveRecords();
+  unlockAch("all");
+  if (runShifts <= 720) unlockAch("frugal");
+  if (runTime <= 1700) unlockAch("swift");
+}
+
+function curState(){ return CONFIG.states[ring]; }
+function platActive(p){ const s = curState().plat; return p.set === "AB" || p.set === s; }
+function spikeActive(s){ return s.set === curState().plat; }
+
+function loadLevel(i){
+  levelIdx = i; level = LEVELS[i];
+  ring = 0; tutIdx = 0; shiftCD = 0; coyote = 0; airFlip = true;
+  levelShifts = 0; levelTime = 0; levelDeathsStart = deaths;
+  attemptTime = 0; evWarn = null; evDone = {}; orbTaken = {};
+  trapRows = []; trapScorch = []; trapHintArmed = false; trapHintEver = false; deathFx = null; runPhase = 0;
+  player.x = level.spawn.x; player.y = level.spawn.y;
+  player.vx = 0; player.vy = 0; player.grounded = false;
+  camX = 0; particles = [];
+}
+function respawn(){
+  player.x = level.spawn.x; player.y = level.spawn.y;
+  player.vx = 0; player.vy = 0;
+  ring = 0; shiftCD = 0; coyote = 0; airFlip = true;
+  attemptTime = 0; evWarn = null; evDone = {}; orbTaken = {};
+  trapRows = [];
+  trapHintArmed = lastDeathTrap && !trapHintEver;
+  lastDeathTrap = false;
+}
+
+let denyT = 0; // ratchet deny feedback timer
+let shiftCD = 0; // 移位冷却（秒）：防连切悬浮/穿刺——切档后 0.4s 内再切无效
+let coyote = 0;  // 离地宽限（秒）：翻重力的输入宽容 0.12s
+let airFlip = true; // 每段滞空只有一次空中翻重力的机会（落地重置、任何翻重力都消耗）——杀坑里悠悠球，保留下落中翻身跳岛
+function ratchetZones(){
+  const z = [];
+  if (level.ratchet) z.push(level.ratchet);
+  if (level.ratchet2) z.push(level.ratchet2);
+  return z;
+}
+function inRatchet(){
+  return ratchetZones().some(r => player.x >= r.x0 && player.x <= r.x1);
+}
+/* ---- v4 mechanics: movers / invert / speed / lock / events / orbs ---- */
+let attemptTime = 0;              // resets every attempt: mover phases are deterministic per attempt
+let evWarn = null;                // {dir, t} telegraphed forced shift (异变事件)
+/* —— 《这关有坑》移位陷阱「落点生刺」——
+   玩家在陷阱区内做平台组移位（状态切换使平台组 A/B 改变）后 0.25s，其正前方
+   120px 处从地面升起一排刺，0.9s 升满，升起进度 ≥0.85 才致命：继续跑能在升满
+   前穿过去，停留（或绕回来落上去）会被扎。触发只看移位与位置，完全确定性。
+   升刺点留焦痕（本关内永久，跨重开保留）；第一次被此陷阱扎死后，重开的那一
+   次尝试里在区起点给一行提示，只出现这一次。 */
+const TRAP_DELAY = 0.25, TRAP_RISE = 0.9, TRAP_DEADLY = 0.85, TRAP_LEAD = 120, TRAP_W = 52;
+let trapRows = [];        // {x, t0} 本次尝试内已触发的刺排（t0 = 开始升起的 attemptTime）
+let trapScorch = [];      // {x} 焦痕标记
+let trapHintArmed = false, trapHintEver = false;
+let lastDeathTrap = false;
+let deathFx = null;       // {x, y, grav, t} 死亡压扁残影（纯视觉，不改即时重开节奏）
+let runPhase = 0, landSquash = 0, wasGrounded = false;
+const SHOT = (() => { try { return new URLSearchParams(location.search).has("shot"); } catch(e){ return false; } })();
+function trapProgress(r){ return Math.max(0, Math.min(1, (attemptTime - r.t0) / TRAP_RISE)); }
+function trapTrigger(){
+  if (!level.trap) return;
+  const rowX = Math.round(player.x + 15 + TRAP_LEAD - TRAP_W / 2);
+  trapRows.push({ x: rowX, t0: attemptTime + TRAP_DELAY });
+  if (!trapScorch.some(s => Math.abs(s.x - rowX) < 30)) trapScorch.push({ x: rowX });
+}
+let evDone = {}, orbTaken = {};
+function inZoneList(list){ return (list || []).some(r => player.x >= r.x0 && player.x <= r.x1); }
+function inInvert(){ return inZoneList(level.inverts); }
+function inLock(){ return inZoneList(level.locks); }
+function speedMul(){
+  let m = 1;
+  for (const z of level.speeds || []) if (player.x >= z.x0 && player.x <= z.x1) m *= z.mul;
+  return m;
+}
+function moverPos(m){
+  const o = Math.sin(attemptTime * m.speed + m.phase) * m.dist;
+  return { x: m.x + (m.axis === "x" ? o : 0), y: m.y + (m.axis === "y" ? o : 0) };
+}
+function forceShift(dir){
+  ring = (ring + dir + CONFIG.states.length) % CONFIG.states.length;
+  flash = 0.35; shake = Math.max(shake, 5);
+  burst(player.x + 15, player.y + 15, "#ffd43b");
+  sfx("shift", dir);
+}
+/* THE single entry point that may change the world state.
+   Ratchet zones are the one exception to free shifting: inside them the
+   ring only moves forward — backshift is denied (with feedback). */
+function shift(dir){
+  if (shiftCD > 0) return;
+  if (inLock()){
+    denyT = 1.0; shake = Math.max(shake, 4); sfx("deny");
     return;
   }
-
-  /* 横移 */
-  const dir = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
-  P.vx = dir * CFG.speed;
-  if (dir !== 0) P.face = dir;
-
-  /* 土狼：着地刷新，离地递减 */
-  if (P.grounded) P.coyote = CFG.coyoteSteps; else if (P.coyote > 0) P.coyote--;
-  if (P.buffer > 0) P.buffer--;
-
-  /* 起跳：着地或土狼期内，且有缓冲 */
-  if (P.buffer > 0 && (P.grounded || P.coyote > 0)) {
-    P.vy = -CFG.jumpVel;
-    P.grounded = false; P.coyote = 0; P.buffer = 0; P.cutDone = false;
+  if (dir < 0 && inRatchet()){
+    denyT = 1.0; shake = Math.max(shake, 4); sfx("deny");
+    return;
   }
-  /* 可变跳高：上升途中松开跳跃键，截断一次 */
-  if (!keys.jump && P.vy < 0 && !P.cutDone) { P.vy *= CFG.cutMul; P.cutDone = true; }
-
-  /* 重力：下落为上升的 1.35 倍 */
-  P.vy += (P.vy < 0 ? CFG.gUp : CFG.gDown) * STEP;
-  if (P.vy > CFG.maxFall) P.vy = CFG.maxFall;
-
-  /* X 轴移动 + 碰撞 */
-  P.x += P.vx * STEP;
-  for (const s of LEVEL.solids) {
-    if (overlap(pbox(), s)) {
-      if (P.vx > 0) P.x = s.x - CFG.pw; else if (P.vx < 0) P.x = s.x + s.w;
-    }
+  const next = (ring + dir + CONFIG.states.length) % CONFIG.states.length;
+  const gravFlip = CONFIG.states[next].grav !== curState().grav;
+  if (gravFlip && !player.grounded && coyote <= 0 && !airFlip){
+    denyT = 1.0; shake = Math.max(shake, 4); sfx("deny");
+    return;
   }
-  if (P.x < 0) P.x = 0; if (P.x > CFG.W - CFG.pw) P.x = CFG.W - CFG.pw;
-
-  /* Y 轴移动 + 碰撞 */
-  P.y += P.vy * STEP;
-  const wasGrounded = P.grounded;
-  P.grounded = false;
-  for (const s of LEVEL.solids) {
-    if (overlap(pbox(), s)) {
-      if (P.vy > 0 && P.y + CFG.ph - P.vy * STEP <= s.y + 0.01) { P.y = s.y - CFG.ph; P.vy = 0; P.grounded = true; }
-      else if (P.vy < 0) { P.y = s.y + s.h; P.vy = 0; }
-      else if (P.vy > 0) { P.y = s.y - CFG.ph; P.vy = 0; P.grounded = true; }
-    }
-  }
-  void wasGrounded;
-
-  /* 尖刺 / 掉落 */
-  for (const s of LEVEL.spikes) if (overlap(pbox(), spikeBox(s))) { die(); return; }
-  if (P.y > CFG.killY) { die(); return; }
-
-  /* 终点旗（原型仅置状态，不做结算） */
-  const f = LEVEL.flag;
-  if (!won && P.x + CFG.pw > f.x && P.x < f.x + 10 && P.y + CFG.ph > f.y - 92 && P.y < f.y) won = true;
+  const prevPlat = curState().plat;
+  ring = next;
+  if (gravFlip) airFlip = false;
+  // 移位陷阱：陷阱区内发生平台组切换（A↔B）即触发「落点生刺」
+  if (level.trap && curState().plat !== prevPlat && player.x >= level.trap.x0 && player.x <= level.trap.x1) trapTrigger();
+  shiftCD = 0.4;
+  runShifts++; levelShifts++;
+  flash = 0.35; shake = Math.max(shake, 3);
+  burst(player.x + 15, player.y + 15, curState().plat === "A" ? curState().platA : curState().platB);
+  sfx("shift", dir);
 }
 
-/* ---------------- 渲染（奶蛙占位：程序图形 + 压扁拉伸） ---------------- */
-const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
-function rr(x, y, w, h, r) {
+/* ---------------- audio (tiny synth) ---------------- */
+let AC = null;
+function audio(){ if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){} } if (AC && AC.state === "suspended") AC.resume(); }
+function tone(f0, f1, dur, type, vol){
+  if (!AC) return;
+  const o = AC.createOscillator(), g = AC.createGain(), t = AC.currentTime;
+  o.type = type || "square"; o.frequency.setValueAtTime(f0, t);
+  o.frequency.exponentialRampToValueAtTime(Math.max(f1, 1), t + dur);
+  g.gain.setValueAtTime(vol || 0.06, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t + dur);
+}
+function sfx(kind, dir){
+  if (!AC || !sfxOn) return;
+  if (kind === "deny")  { tone(140, 90, 0.15, "sawtooth", 0.06); }
+  if (kind === "shift") { tone(dir > 0 ? 320 : 520, dir > 0 ? 640 : 260, 0.12, "square", 0.05); }
+  if (kind === "die")   { tone(300, 60, 0.25, "sawtooth", 0.07); }
+  if (kind === "goal")  { tone(523, 523, 0.09, "square", 0.05); setTimeout(()=>tone(659,659,0.09,"square",0.05), 90); setTimeout(()=>tone(784,784,0.16,"square",0.05), 180); }
+}
+
+/* Chiptune loop: tiny lookahead sequencer, all synthesized (no audio files).
+   Am – F – C – G, bass + arpeggio. Starts on game start, M toggles it. */
+const Music = (() => {
+  let started = false, muted = false, step = 0, nextT = 0, timer = null;
+  const BPM = 116, EIGHTH = 60 / BPM / 2;
+  const BASS = [45, 41, 48, 43];                    // A2 F2 C3 G2, one bar each
+  const ARP  = [[57,60,64,69],[53,57,60,65],[55,60,64,67],[55,59,62,67]];
+  const mf = m => 440 * Math.pow(2, (m - 69) / 12);
+  function note(m, t, dur, type, vol, dest){
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.type = type; o.frequency.value = mf(m);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g); g.connect(dest); o.start(t); o.stop(t + dur + 0.02);
+  }
+  function schedule(){
+    if (!AC) return;
+    while (nextT < AC.currentTime + 0.25){
+      const bar = Math.floor(step / 8) % 4, s8 = step % 8;
+      if (!muted){
+        const master = AC.createGain(); master.gain.value = 0.5; master.connect(AC.destination);
+        if (s8 === 0 || s8 === 3 || s8 === 6) note(BASS[bar], nextT, 0.22, "triangle", 0.20, master);
+        if (s8 === 4) note(BASS[bar] + 7, nextT, 0.18, "triangle", 0.14, master);
+        const arpNotes = ARP[bar];
+        note(arpNotes[step % 4], nextT, 0.12, "square", 0.045, master);
+        if (step % 16 === 14) note(arpNotes[3] + 12, nextT, 0.2, "square", 0.04, master);
+      }
+      step++; nextT += EIGHTH;
+    }
+  }
+  return {
+    start(){ if (started || !AC) return; started = true; step = 0; nextT = AC.currentTime + 0.06; timer = setInterval(schedule, 90); },
+    toggle(){ muted = !muted; return muted; },
+    setMuted(m){ muted = !!m; },
+    get muted(){ return muted; }
+  };
+})();
+
+/* ---------------- input ---------------- */
+function pressShift(dir){
+  audio();
+  if (screen === "title" && titlePanel) { titlePanel = null; return; }
+  if (screen === "title") { runTime = 0; deaths = 0; runShifts = 0; achToast = ""; screen = "play"; loadLevel(0); Music.start(); return; }
+  if (screen === "win")   { screen = "title"; return; }
+  if (screen !== "play") return;
+  if (inInvert()) dir = -dir;   // 颠倒区：左右互换（输入层反转，规则照常生效）
+  shift(dir);
+}
+window.addEventListener("keydown", (e) => {
+  if (e.code === "ShiftLeft")  { if (!e.repeat) pressShift(1);  e.preventDefault(); }
+  if (e.code === "ShiftRight") { if (!e.repeat) pressShift(-1); e.preventDefault(); }
+  if (e.code === "KeyR" && screen === "play") { deaths++; respawn(); }
+  if (e.code === "KeyM") { audio(); settings.music = !Music.toggle(); saveSettings(); }
+  if (e.code === "Escape" && screen === "title") titlePanel = null;
+  if (screen === "title" && /^Digit\d$/.test(e.code)) { const i = e.code === "Digit0" ? 9 : +e.code.slice(5) - 1; if (i < LEVELS.length && i <= unlocked) startLevel(i); }
+});
+let padL = null, padR = null; // touch/mouse pads drawn on canvas, hit-tested below
+cv.addEventListener("pointerdown", (e) => {
+  const r = cv.getBoundingClientRect();
+  const x = (e.clientX - r.left) * (CONFIG.viewW / r.width);
+  const y = (e.clientY - r.top)  * (CONFIG.viewH / r.height);
+  if (screen === "title"){
+    if (titlePanel) { titlePanel = null; return; }
+    for (const b of uiBtns){
+      if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h){
+        if (b.id === "music") { audio(); settings.music = !Music.toggle(); saveSettings(); }
+        else if (b.id === "sfx") { sfxOn = !sfxOn; settings.sfx = sfxOn; saveSettings(); if (sfxOn) sfx("goal"); }
+        else if (b.id === "board") titlePanel = "board";
+        else if (b.id === "ach") titlePanel = "ach";
+        return;
+      }
+    }
+    for (const b of titleBtns){
+      if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h){
+        if (b.i <= unlocked) startLevel(b.i);
+        return;
+      }
+    }
+  }
+  if (padL && x >= padL.x && x <= padL.x + padL.w && y >= padL.y && y <= padL.y + padL.h) pressShift(-1);
+  else if (padR && x >= padR.x && x <= padR.x + padR.w && y >= padR.y && y <= padR.y + padR.h) pressShift(1);
+  else if (screen !== "play") pressShift(1);
+});
+window.addEventListener("blur", () => { /* keys are event-driven; nothing sticks */ });
+
+/* ---------------- physics ---------------- */
+function burst(x, y, color){
+  for (let i = 0; i < 14; i++){
+    const a = Math.random() * Math.PI * 2, sp = 40 + Math.random() * 130;
+    particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0.45, color });
+  }
+}
+function overlaps(a, b){ return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
+
+function step(dt){
+  if (screen === "clear") { clearTimer -= dt; if (clearTimer <= 0) { if (levelIdx + 1 > unlocked) { unlocked = Math.min(levelIdx + 1, LEVELS.length - 1); saveUnlock(); } if (levelIdx + 1 < LEVELS.length) { loadLevel(levelIdx + 1); screen = "play"; } else { commitRun(); screen = "win"; } } }
+  if (screen !== "play") return;
+  runTime += dt; levelTime += dt; attemptTime += dt;
+  if (shiftCD > 0) shiftCD -= dt;
+  const st = curState(), S = CONFIG.playerSize, PH = 22;
+  player.vx = CONFIG.runSpeed * speedMul();
+  player.vy += CONFIG.gravity * st.grav * dt;
+  player.vy = Math.max(-CONFIG.maxFall, Math.min(CONFIG.maxFall, player.vy));
+
+  // Platforms are one-way surfaces in the gravity axis: no side collision.
+  // (Solid AABB sides pin the player on platform corners at state seams —
+  //  see BUG_LOG 2026-11-21. Swept landing on the gravity-facing surface only.)
+  const prevY = player.y;
+  player.x += player.vx * dt;
+  player.y += player.vy * dt;
+  player.grounded = false;
+  for (const p of level.platforms){
+    if (!platActive(p)) continue;
+    if (player.x + S <= p.x || player.x >= p.x + p.w) continue;
+    if (st.grav > 0 && player.vy >= 0 && prevY + S <= p.y + 0.01 && player.y + S >= p.y){
+      player.y = p.y - S; player.vy = 0; player.grounded = true;
+    } else if (st.grav < 0 && player.vy <= 0 && prevY >= p.y + PH - 0.01 && player.y <= p.y + PH){
+      player.y = p.y + PH; player.vy = 0; player.grounded = true;
+    }
+  }
+  if (player.grounded) { coyote = 0.12; airFlip = true; } else coyote -= dt;
+  let box = { x: player.x, y: player.y, w: S, h: S };
+  // spikes
+  box = { x: player.x + 5, y: player.y + 5, w: S - 10, h: S - 10 };
+  for (const s of level.spikes){
+    if (!spikeActive(s)) continue;
+    const sb = s.hang ? { x: s.x, y: s.y, w: 26, h: 20 } : { x: s.x, y: s.y - 20, w: 26, h: 20 };
+    if (overlaps(box, sb)) { die(); return; }
+  }
+  // moving spikes (patrolling hazards, phase-locked to the attempt clock)
+  for (const m of level.movers || []){
+    if (!spikeActive(m)) continue;
+    const mp = moverPos(m);
+    const sb = m.hang ? { x: mp.x, y: mp.y, w: 26, h: 20 } : { x: mp.x, y: mp.y - 20, w: 26, h: 20 };
+    if (overlaps(box, sb)) { die(); return; }
+  }
+  // 移位陷阱「落点生刺」：升起进度 ≥0.85 的刺排致命
+  if (level.trap){
+    for (const r of trapRows){
+      if (trapProgress(r) < TRAP_DEADLY) continue;
+      const sb = { x: r.x, y: level.trap.surf - 20, w: TRAP_W, h: 20 };
+      if (overlaps(box, sb)) { lastDeathTrap = true; die(); return; }
+    }
+  }
+  // orbs: touching one restores the mid-air gravity flip (回气珠)
+  for (let i = 0; i < (level.orbs || []).length; i++){
+    if (orbTaken[i]) continue;
+    const o = level.orbs[i], dx = player.x + 15 - o.x, dy = player.y + 15 - o.y;
+    if (dx * dx + dy * dy < 36 * 36 && !airFlip){
+      airFlip = true; orbTaken[i] = true;
+      burst(o.x, o.y, "#66d9e8"); sfx("goal");
+    }
+  }
+  // random events: telegraphed forced shift (异变)
+  for (let i = 0; i < (level.events || []).length; i++){
+    if (evDone[i]) continue;
+    if (player.x >= level.events[i].x){
+      evDone[i] = true;
+      evWarn = { dir: Math.random() < 0.5 ? 1 : -1, t: 0.85 };
+      sfx("deny");
+    }
+  }
+  if (evWarn){
+    evWarn.t -= dt;
+    if (evWarn.t <= 0){ forceShift(evWarn.dir); evWarn = null; }
+  }
+  // fell / flew out
+  if (player.y > CONFIG.killBelowY || player.y < CONFIG.killAboveY) { die(); return; }
+  // goal (zone box; works for floor flags and ceiling flags)
+  const g = level.goal;
+  if (overlaps({ x: player.x, y: player.y, w: S, h: S }, g)){
+    commitLevel();
+    sfx("goal"); screen = "clear"; clearTimer = 1.1;
+  }
+  tutAdvance();
+  if (!(SHOT && deathFx)) camX = Math.max(0, Math.min(level.width - CONFIG.viewW, player.x - 300));
+  // particles
+  for (const pt of particles){ pt.x += pt.vx * dt; pt.y += pt.vy * dt; pt.life -= dt; }
+  particles = particles.filter(pt => pt.life > 0);
+  // 奶蛙动画状态（纯视觉）：跑步相位随距离推进、落地压扁、死亡残影计时、提示已展示标记
+  if (player.grounded) runPhase += player.vx * dt / 30;
+  if (player.grounded && !wasGrounded) landSquash = 0.13;
+  wasGrounded = player.grounded;
+  if (landSquash > 0) landSquash -= dt;
+  if (deathFx){ deathFx.t -= dt; if (deathFx.t <= 0) deathFx = null; }
+  if (trapHintArmed) trapHintEver = true;
+  if (flash > 0) flash -= dt;
+  if (denyT > 0) denyT -= dt;
+  if (shake > 0) shake = Math.max(0, shake - dt * 14);
+}
+function die(){
+  deaths++; sfx("die"); burst(player.x + 15, player.y + 15, "#ff5d5d");
+  deathFx = { x: player.x, y: player.y, grav: curState().grav, t: SHOT ? 3 : 0.45 };
+  respawn();
+}
+
+/* ---------------- render ---------------- */
+function rr(x, y, w, h, r){
   ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
 }
-function drawFrog() {
-  const t = frame * STEP;
-  let sx = 1, sy = 1;
-  if (P.dead) { sx = 1.55; sy = 0.30; }
-  else if (!P.grounded && P.vy < 0) { sx = 0.88; sy = 1.14; }
-  else if (!P.grounded) { sx = 0.94; sy = 1.08; }
-  else if (P.vx !== 0) { sy = 1 + 0.05 * Math.sin(t * 18); sx = 1 - 0.04 * Math.sin(t * 18); }
-  else { sy = 1 + 0.03 * Math.sin(t * 2.4); sx = 1 - 0.02 * Math.sin(t * 2.4); }
-  const cx = P.x + CFG.pw / 2, by = P.y + CFG.ph;
+/* ---------------- 奶蛙（canvas 程序绘制，对着原图 naiwa_front / naiwa_side 还原） ----------------
+   局部坐标：原点在脚底中心，+x 为朝向，身体在负 y 区，总高约 56px。
+   特征清单：奶黄梨形大身子（下宽上窄）／正面下半部一整块奶白大圆肚皮／头顶两侧
+   绿环眼＋黑大瞳（朝上略向外）／极细一条短横线嘴／灰褐手脚、四肢相对细长。
+   奔跑：双腿大幅前后迈开（±13px）、双臂反向摆、身子随步频起伏并轻微前倾；
+   gravUp 时整体上下翻转，贴天花板跑。 */
+function drawFrog(cx, feetY, o){
+  const YEL = "#f6c945", YEL_D = "#dfa92f", CREAM = "#fff7e9", BROWN = "#8a7a66", BROWN_D = "#77685a", GREEN = "#79c74f";
   ctx.save();
-  ctx.translate(cx, by); ctx.scale(sx * P.face, sy);
-  /* 脚 */
-  ctx.fillStyle = "#a08b62";
-  ctx.beginPath(); ctx.ellipse(-11, -2, 7, 3.5, 0, 0, 7); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(11, -2, 7, 3.5, 0, 0, 7); ctx.fill();
-  /* 身子：奶黄水滴 */
-  ctx.fillStyle = "#ffd83d"; ctx.strokeStyle = "#dfa916"; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.ellipse(0, -21, 19, 21, 0, 0, 7); ctx.fill(); ctx.stroke();
-  /* 肚皮：奶白 */
-  ctx.fillStyle = "#fff6d8";
-  ctx.beginPath(); ctx.ellipse(0, -13, 11.5, 12, 0, 0, 7); ctx.fill();
-  /* 眼：头两侧绿圆眼 */
-  for (const s of [-1, 1]) {
-    ctx.fillStyle = "#58c24a"; ctx.strokeStyle = "#3d8b34"; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(s * 12, -40, 6.5, 0, 7); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = "#20242e";
-    ctx.beginPath(); ctx.arc(s * 12 + 1.5, -40, 3, 0, 7); ctx.fill();
-    ctx.fillStyle = "#fff";
-    ctx.beginPath(); ctx.arc(s * 12 + 2.5, -41.5, 1.1, 0, 7); ctx.fill();
-  }
-  /* 嘴：细线 */
-  ctx.strokeStyle = "#8a6d1f"; ctx.lineWidth = 1.6;
-  ctx.beginPath(); ctx.moveTo(-4, -26); ctx.lineTo(4, -26); ctx.stroke();
+  ctx.globalAlpha = o.alpha === undefined ? 1 : o.alpha;
+  ctx.translate(cx, feetY);
+  if (o.gravUp) ctx.scale(1, -1);
+  ctx.scale(o.face * (1 + (1 - o.squash) * 0.35), o.squash);
+  const ph = o.phase || 0;
+  const s = Math.sin(ph);
+  const bob = o.airborne ? 0 : -Math.abs(s) * 1.6;
+  ctx.translate(0, bob);
+  if (!o.airborne) ctx.rotate(0.05);
+  const leg = (hx, fx, fy, col, w) => {
+    ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(hx, -11);
+    ctx.quadraticCurveTo(hx + (fx - hx) * 0.55, -4, fx, fy); ctx.stroke();
+    ctx.fillStyle = BROWN;
+    ctx.beginPath(); ctx.ellipse(fx + 2, -1.5, 5.2, 3.4, 0, 0, Math.PI * 2); ctx.fill();
+  };
+  // 远侧腿（略暗，与近侧反相迈步；脚要迈出身体轮廓外才读得出大步）
+  if (o.airborne) leg(-4, -15, -5, YEL_D, 7); else leg(-4, -5 - s * 24, s > 0 ? -4 : -1, YEL_D, 7);
+  // 身子：梨形，下宽上窄、通体圆润
+  ctx.fillStyle = YEL;
+  ctx.beginPath();
+  ctx.moveTo(-19, -4);
+  ctx.bezierCurveTo(-21, -22, -15, -38, -10, -47);
+  ctx.bezierCurveTo(-6, -53.5, 6, -53.5, 10, -47);
+  ctx.bezierCurveTo(15, -38, 20, -24, 19, -6);
+  ctx.bezierCurveTo(12, -0.5, -12, -0.5, -19, -4);
+  ctx.closePath(); ctx.fill();
+  // 肚皮：正面下半部一整块奶白大圆
+  ctx.fillStyle = CREAM;
+  ctx.beginPath(); ctx.ellipse(3.5, -21, 13.5, 15.5, -0.08, 0, Math.PI * 2); ctx.fill();
+  // 远侧手：灰褐色小手搭在肚皮左侧（原图里双手都扶在肚皮上）
+  ctx.fillStyle = BROWN_D;
+  ctx.beginPath(); ctx.arc(-8, -19, 3.8, 0, Math.PI * 2); ctx.fill();
+  // 近侧腿：迈开大步
+  if (o.airborne) leg(4, 16, -7, YEL, 7.5); else leg(4, 5 + s * 24, s > 0 ? -1 : -4, YEL, 7.5);
+  // 近侧臂：与近侧腿反向摆动，手是灰褐色
+  const hx2 = 7 - s * 9, hy2 = -18;
+  ctx.strokeStyle = YEL; ctx.lineWidth = 6; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(7, -34);
+  ctx.quadraticCurveTo(7 + (hx2 - 7) * 0.5, -26, hx2, hy2); ctx.stroke();
+  ctx.fillStyle = BROWN;
+  ctx.beginPath(); ctx.arc(hx2, hy2, 4.3, 0, Math.PI * 2); ctx.fill();
+  // 眼睛：头顶两侧，绿圆环＋黑色大瞳孔，朝上、略向外
+  const eye = (ex, ey2, r) => {
+    ctx.fillStyle = GREEN;
+    ctx.beginPath(); ctx.arc(ex, ey2, r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#101010";
+    ctx.beginPath(); ctx.arc(ex + 0.9, ey2 - 0.9, r * 0.58, 0, Math.PI * 2); ctx.fill();
+  };
+  eye(-6.5, -48.5, 4.6); eye(8, -49.5, 4.3);
+  // 嘴：极细的一条短横线
+  ctx.strokeStyle = "rgba(96,74,40,0.9)"; ctx.lineWidth = 1.3; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(8.5, -40.5); ctx.lineTo(15, -41); ctx.stroke();
   ctx.restore();
 }
-function draw() {
-  ctx.clearRect(0, 0, CFG.W, CFG.H);
-  /* 平台 */
-  for (const s of LEVEL.solids) {
-    ctx.fillStyle = "#2f9e8f"; rr(s.x, s.y, s.w, s.h, 6); ctx.fill();
-    ctx.fillStyle = "#267a6e"; rr(s.x, s.y + s.h - 8, s.w, 8, 4); ctx.fill();
+function draw(){
+  const st = curState(), W = CONFIG.viewW, H = CONFIG.viewH;
+  ctx.fillStyle = st.sky; ctx.fillRect(0, 0, W, H);
+  const sx = shake ? (Math.random() - 0.5) * shake : 0;
+  const sy = shake ? (Math.random() - 0.5) * shake : 0;
+  ctx.save(); ctx.translate(-camX + sx, sy);
+  // far silhouettes
+  ctx.fillStyle = st.far;
+  for (let i = 0; i < 14; i++){ const bx = i * 260 + 40; ctx.fillRect(bx, 300 - (i % 3) * 40, 90, 260); }
+  // ratchet zone stripes
+  for (const r of ratchetZones()){
+    ctx.fillStyle = "rgba(255,92,92,0.06)"; ctx.fillRect(r.x0, 0, r.x1 - r.x0, CONFIG.viewH);
+    ctx.strokeStyle = "rgba(255,92,92,0.35)"; ctx.lineWidth = 2; ctx.setLineDash([10, 8]);
+    ctx.beginPath(); ctx.moveTo(r.x0, 0); ctx.lineTo(r.x0, CONFIG.viewH); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = "rgba(255,120,120,0.8)"; ctx.font = "bold 15px system-ui"; ctx.textAlign = "left";
+    ctx.fillText("⇢ 棘轮区 — 只能向前", r.x0 + 12, 90);
   }
-  /* 尖刺：高对比深红 */
-  ctx.fillStyle = "#c62f3b";
-  for (const s of LEVEL.spikes) {
-    for (let i = 0; i < s.n; i++) {
-      const x = s.x + i * TOOTH_W;
-      ctx.beginPath();
-      ctx.moveTo(x, s.y); ctx.lineTo(x + TOOTH_W / 2, s.y - TOOTH_H); ctx.lineTo(x + TOOTH_W, s.y);
-      ctx.closePath(); ctx.fill();
+  // v4 zone tints
+  for (const r of level.inverts || []){
+    ctx.fillStyle = "rgba(177,106,255,0.07)"; ctx.fillRect(r.x0, 0, r.x1 - r.x0, CONFIG.viewH);
+    ctx.fillStyle = "rgba(200,150,255,0.85)"; ctx.font = "bold 15px system-ui"; ctx.textAlign = "left";
+    ctx.fillText("⇄ 颠倒区 — 左右互换", r.x0 + 12, 90);
+  }
+  for (const r of level.locks || []){
+    ctx.fillStyle = "rgba(160,170,190,0.10)"; ctx.fillRect(r.x0, 0, r.x1 - r.x0, CONFIG.viewH);
+    ctx.fillStyle = "rgba(200,210,225,0.85)"; ctx.font = "bold 15px system-ui"; ctx.textAlign = "left";
+    ctx.fillText("⊘ 凝滞区 — 无法移位", r.x0 + 12, 90);
+  }
+  for (const r of level.speeds || []){
+    ctx.fillStyle = "rgba(255,212,59,0.05)"; ctx.fillRect(r.x0, 0, r.x1 - r.x0, CONFIG.viewH);
+    ctx.fillStyle = "rgba(255,220,100,0.85)"; ctx.font = "bold 15px system-ui"; ctx.textAlign = "left";
+    ctx.fillText("» 加速区", r.x0 + 12, 90);
+  }
+  // ghost (inactive) platforms first
+  for (const p of level.platforms){
+    if (platActive(p)) continue;
+    ctx.strokeStyle = p.set === "A" ? st.platA : st.platB;
+    ctx.globalAlpha = 0.35; ctx.setLineDash([7, 7]); ctx.lineWidth = 2;
+    ctx.lineDashOffset = -performance.now() / 28;
+    ctx.strokeRect(p.x, p.y, p.w, 22); ctx.setLineDash([]); ctx.globalAlpha = 1;
+  }
+  // active platforms
+  for (const p of level.platforms){
+    if (!platActive(p)) continue;
+    ctx.fillStyle = p.set === "B" ? st.platB : st.platA;
+    if (p.set === "AB") ctx.fillStyle = "#8d99ae";
+    rr(p.x, p.y, p.w, 22, 5); ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.25)"; ctx.fillRect(p.x, p.y, p.w, 4);
+  }
+  // spikes
+  for (const s of level.spikes){
+    if (!spikeActive(s)) { ctx.globalAlpha = 0.3; }
+    ctx.fillStyle = "#ff5d5d";
+    ctx.beginPath();
+    if (s.hang){ ctx.moveTo(s.x, s.y); ctx.lineTo(s.x + 13, s.y + 20); ctx.lineTo(s.x + 26, s.y); }
+    else { ctx.moveTo(s.x, s.y); ctx.lineTo(s.x + 13, s.y - 20); ctx.lineTo(s.x + 26, s.y); }
+    ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
+  }
+  // movers: track + spike at current phase position
+  for (const m of level.movers || []){
+    const mp = moverPos(m);
+    ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = 2;
+    ctx.beginPath();
+    if (m.axis === "y"){ ctx.moveTo(m.x + 13, m.y - m.dist); ctx.lineTo(m.x + 13, m.y + m.dist); }
+    else { ctx.moveTo(m.x - m.dist, m.y - 10); ctx.lineTo(m.x + m.dist, m.y - 10); }
+    ctx.stroke();
+    if (!spikeActive(m)) ctx.globalAlpha = 0.3;
+    ctx.fillStyle = "#ff922b";
+    ctx.beginPath();
+    if (m.hang){ ctx.moveTo(mp.x, mp.y); ctx.lineTo(mp.x + 13, mp.y + 20); ctx.lineTo(mp.x + 26, mp.y); }
+    else { ctx.moveTo(mp.x, mp.y); ctx.lineTo(mp.x + 13, mp.y - 20); ctx.lineTo(mp.x + 26, mp.y); }
+    ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
+  }
+  // orbs
+  for (let i = 0; i < (level.orbs || []).length; i++){
+    if (orbTaken[i]) continue;
+    const o = level.orbs[i], pr = 10 + Math.sin(performance.now() / 240) * 2;
+    ctx.strokeStyle = "#66d9e8"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(o.x, o.y, pr + 5, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = "#a5f3fc";
+    ctx.beginPath(); ctx.arc(o.x, o.y, pr - 3, 0, Math.PI * 2); ctx.fill();
+  }
+  // goal flag (stands on a floor surface, or hangs from a ceiling one)
+  const g = level.goal;
+  if (g.ceil){
+    ctx.fillStyle = "#e9ecef"; ctx.fillRect(g.x + 15, g.surf, 4, 62);
+    ctx.fillStyle = "#51cf66"; ctx.beginPath();
+    ctx.moveTo(g.x + 19, g.surf + 34); ctx.lineTo(g.x + 49, g.surf + 48); ctx.lineTo(g.x + 19, g.surf + 62);
+  } else {
+    ctx.fillStyle = "#e9ecef"; ctx.fillRect(g.x + 15, g.surf - 92, 4, 92);
+    ctx.fillStyle = "#51cf66"; ctx.beginPath();
+    ctx.moveTo(g.x + 19, g.surf - 92); ctx.lineTo(g.x + 49, g.surf - 78); ctx.lineTo(g.x + 19, g.surf - 64);
+  }
+  ctx.closePath(); ctx.fill();
+  // 移位陷阱：焦痕（永久标记）→ 正在升起的刺排 → 死后提示（只出现一次）
+  if (level.trap){
+    const surf = level.trap.surf;
+    for (const s of trapScorch){
+      ctx.fillStyle = "rgba(24,14,8,0.55)";
+      ctx.beginPath(); ctx.ellipse(s.x + TRAP_W / 2, surf - 1, TRAP_W / 2 + 4, 4.5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "rgba(24,14,8,0.8)";
+      ctx.fillRect(s.x + 8, surf - 4, 5, 3); ctx.fillRect(s.x + 26, surf - 5, 6, 4); ctx.fillRect(s.x + 42, surf - 4, 5, 3);
+    }
+    for (const r of trapRows){
+      const p = trapProgress(r);
+      if (p <= 0) continue;
+      const h = 20 * p;
+      ctx.fillStyle = "#ff5d5d";
+      for (let k = 0; k < 2; k++){
+        const sx2 = r.x + k * 26;
+        ctx.beginPath(); ctx.moveTo(sx2, surf); ctx.lineTo(sx2 + 13, surf - h); ctx.lineTo(sx2 + 26, surf); ctx.closePath(); ctx.fill();
+      }
+    }
+    if (trapHintArmed && player.x < level.trap.x1){
+      const hx = level.trap.x0 + 14, hy = surf - 64;
+      ctx.font = "bold 15px system-ui";
+      const tw = ctx.measureText("移位之后，别停").width + 24;
+      ctx.fillStyle = "rgba(8,10,24,0.88)"; rr(hx, hy, tw, 30, 9); ctx.fill();
+      ctx.strokeStyle = "#ffd166"; ctx.lineWidth = 1.5; rr(hx, hy, tw, 30, 9); ctx.stroke();
+      ctx.fillStyle = "#ffd166"; ctx.textAlign = "left";
+      ctx.fillText("移位之后，别停", hx + 12, hy + 20);
     }
   }
-  /* 终点旗 */
-  const f = LEVEL.flag;
-  ctx.strokeStyle = "#555"; ctx.lineWidth = 4;
-  ctx.beginPath(); ctx.moveTo(f.x, f.y); ctx.lineTo(f.x, f.y - 92); ctx.stroke();
-  ctx.fillStyle = won ? "#ffd83d" : "#58c24a";
-  ctx.beginPath(); ctx.moveTo(f.x, f.y - 92); ctx.lineTo(f.x + 34, f.y - 80); ctx.lineTo(f.x, f.y - 68); ctx.closePath(); ctx.fill();
-  drawFrog();
-  if (won) {
-    ctx.fillStyle = "rgba(32,36,46,.55)"; ctx.fillRect(0, 0, CFG.W, CFG.H);
-    ctx.fillStyle = "#ffd83d"; ctx.font = "bold 44px sans-serif"; ctx.textAlign = "center";
-    ctx.fillText("到终点啦！", CFG.W / 2, CFG.H / 2);
+  // player —— 奶蛙（碰撞盒仍是原 30px，绘制约 56px 高，脚底对齐盒底边）
+  const S = CONFIG.playerSize;
+  const sq = landSquash > 0 ? 1 - 0.25 * Math.sin(Math.PI * (1 - landSquash / 0.13)) : 1;
+  drawFrog(player.x + S / 2, st.grav > 0 ? player.y + S : player.y,
+    { face: player.vx < 0 ? -1 : 1, gravUp: st.grav < 0, phase: runPhase, airborne: !player.grounded, squash: sq, alpha: 1 });
+  if (deathFx){
+    drawFrog(deathFx.x + S / 2, deathFx.grav > 0 ? deathFx.y + S : deathFx.y,
+      { face: 1, gravUp: deathFx.grav < 0, phase: Math.PI / 2, airborne: false, squash: 0.22, alpha: 0.95 });
   }
-  document.getElementById("deaths").textContent = deaths;
+  // particles
+  for (const pt of particles){ ctx.globalAlpha = Math.max(pt.life, 0) * 1.8; ctx.fillStyle = pt.color; ctx.fillRect(pt.x - 3, pt.y - 3, 6, 6); }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+  if (flash > 0){ ctx.fillStyle = "rgba(255,255,255," + (flash * 0.5) + ")"; ctx.fillRect(0, 0, W, H); }
+
+  if (evWarn && screen === "play"){
+    ctx.fillStyle = "rgba(20,10,0,0.45)"; ctx.fillRect(0, 150, W, 64);
+    ctx.fillStyle = "#ffd43b"; ctx.font = "bold 26px system-ui"; ctx.textAlign = "center";
+    ctx.fillText(evWarn.dir > 0 ? "⚠ 异变！即将强制前移 →" : "⚠ 异变！即将强制后移 ←", W / 2, 192);
+  }
+  if (screen === "play" || screen === "clear") drawHUD();
+  if (screen === "title") drawTitle();
+  if (screen === "clear") centerText("过关！", achToast, "#51cf66");
+  if (screen === "win") drawWin();
+  // touch pads
+  padL = { x: 16, y: H - 92, w: 196, h: 74 }; padR = { x: W - 212, y: H - 92, w: 196, h: 74 };
+  if (screen === "play" && !SHOT){
+    ctx.globalAlpha = 0.55; ctx.fillStyle = "#ffffff";
+    rr(padL.x, padL.y, padL.w, padL.h, 14); ctx.fill();
+    rr(padR.x, padR.y, padR.w, padR.h, 14); ctx.fill();
+    ctx.globalAlpha = 1; ctx.fillStyle = "#14142b"; ctx.font = "bold 21px system-ui"; ctx.textAlign = "center";
+    const inv = screen === "play" && inInvert();
+    ctx.fillText(inv ? "前移 ▶" : "◀ 后移", padL.x + padL.w / 2, padL.y + 46);
+    ctx.fillText(inv ? "◀ 后移" : "前移 ▶", padR.x + padR.w / 2, padR.y + 46);
+  }
+  drawTut();
+}
+function drawHUD(){
+  const W = CONFIG.viewW, st = curState();
+  ctx.fillStyle = "rgba(0,0,0,0.35)"; rr(14, 12, 250, 34, 9); ctx.fill();
+  ctx.fillStyle = "#fff"; ctx.font = "bold 15px system-ui"; ctx.textAlign = "left";
+  ctx.fillText(level.name, 26, 34);
+  // state ring dots
+  for (let i = 0; i < 4; i++){
+    const x = W / 2 - 66 + i * 44;
+    ctx.beginPath(); ctx.arc(x, 29, i === ring ? 13 : 9, 0, Math.PI * 2);
+    ctx.fillStyle = i === ring ? CONFIG.states[i].platB : "rgba(255,255,255,0.25)"; ctx.fill();
+  }
+  ctx.fillStyle = "#fff"; ctx.font = "bold 15px system-ui"; ctx.textAlign = "center";
+  ctx.fillText(st.name, W / 2, 66);
+  if (screen === "play" && inRatchet()){
+    ctx.fillStyle = "#ff8787"; ctx.font = "bold 13px system-ui";
+    ctx.fillText("棘轮区 — 不能后移", W / 2, 88);
+  }
+  if (denyT > 0){
+    ctx.fillStyle = "rgba(255,80,80," + Math.min(denyT, 1) + ")"; ctx.font = "bold 24px system-ui";
+    ctx.fillText("✕ 已锁定 — 只能向前", W / 2, 128);
+  }
+  ctx.fillStyle = "rgba(0,0,0,0.35)"; rr(W - 130, 12, 116, 34, 9); ctx.fill();
+  ctx.fillStyle = "#fff"; ctx.textAlign = "right"; ctx.fillText("死亡 " + deaths, W - 26, 34);
+}
+function drawTut(){
+  if (screen !== "play") return;
+  const s = tutCurrent();
+  if (!s) return;
+  const W = CONFIG.viewW;
+  // speech bar, bottom-center, above the pads
+  ctx.font = "16px system-ui";
+  const tw = Math.min(ctx.measureText(s.text).width + 44, W - 60);
+  const bx = (W - tw) / 2, by = CONFIG.viewH - 168;
+  ctx.fillStyle = "rgba(8,10,24,0.88)"; rr(bx, by, tw, 42, 12); ctx.fill();
+  ctx.strokeStyle = "#ffd166"; ctx.lineWidth = 2; rr(bx, by, tw, 42, 12); ctx.stroke();
+  ctx.fillStyle = "#fff"; ctx.textAlign = "center";
+  ctx.fillText(s.text, W / 2, by + 27, tw - 28);
+  // pulse ring on the REAL control this step names
+  const pad = s.hl === "F" ? padR : s.hl === "B" ? padL : null;
+  if (pad){
+    const a = 0.55 + 0.45 * Math.sin(performance.now() / 220);
+    ctx.strokeStyle = "rgba(255,209,102," + a + ")"; ctx.lineWidth = 4;
+    rr(pad.x - 6, pad.y - 6, pad.w + 12, pad.h + 12, 16); ctx.stroke();
+    ctx.fillStyle = "rgba(255,209,102," + a + ")"; ctx.font = "bold 15px system-ui";
+    ctx.fillText("▼ 点这个", pad.x + pad.w / 2, pad.y - 16);
+  }
+}
+function centerText(big, small, color){
+  const W = CONFIG.viewW, H = CONFIG.viewH;
+  ctx.fillStyle = "rgba(5,6,16,0.72)"; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = color; ctx.font = "bold 54px system-ui"; ctx.textAlign = "center";
+  ctx.fillText(big, W / 2, H / 2 - 8);
+  ctx.fillStyle = "#dfe3ee"; ctx.font = "19px system-ui";
+  ctx.fillText(small, W / 2, H / 2 + 34);
+}
+function drawTitle(){
+  const W = CONFIG.viewW, H = CONFIG.viewH;
+  ctx.fillStyle = "rgba(5,6,16,0.78)"; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ffd166"; ctx.font = "bold 76px system-ui";
+  ctx.fillText("这关有坑", W / 2, 168);
+  // 选关按钮，三行 × 10（命中区与 pointerdown 共用 titleBtns）
+  titleBtns = [];
+  const bw = 76, bh = 48, gap = 10, per = 10;
+  const rowW = bw * per + gap * (per - 1), bx0 = (W - rowW) / 2;
+  for (let i = 0; i < LEVELS.length; i++){
+    const bx = bx0 + (i % per) * (bw + gap), by = 232 + Math.floor(i / per) * 62;
+    titleBtns.push({ x: bx, y: by, w: bw, h: bh, i });
+    const open = i <= unlocked;
+    ctx.fillStyle = open ? "#ffd166" : "rgba(255,255,255,0.10)";
+    rr(bx, by, bw, bh, 10); ctx.fill();
+    ctx.fillStyle = open ? "#14142b" : "#8d99ae"; ctx.font = "bold 20px system-ui";
+    ctx.fillText(open ? String(i + 1) : "🔒", bx + bw / 2, by + 32);
+  }
+  ctx.fillStyle = "#aeb6cc"; ctx.font = "16px system-ui";
+  ctx.fillText("点任意处开始", W / 2, 476);
+  // 底部一行：音乐/音效开关与排行榜/成就入口（uiBtns 与 pointerdown 共用）
+  uiBtns = [];
+  const items = [
+    { id: "music", label: "音乐 " + (settings.music ? "开" : "关"), x: 150 },
+    { id: "sfx",   label: "音效 " + (sfxOn ? "开" : "关"),          x: 330 },
+    { id: "board", label: "排行榜",                                 x: 630 },
+    { id: "ach",   label: "成就",                                   x: 800 }
+  ];
+  ctx.font = "15px system-ui";
+  for (const it of items){
+    uiBtns.push({ x: it.x - 70, y: 484, w: 140, h: 38, id: it.id });
+    ctx.fillStyle = "#8d99ae";
+    ctx.fillText(it.label, it.x, 508);
+  }
+  if (titlePanel === "board") drawBoard();
+  if (titlePanel === "ach") drawAchPanel();
+}
+function fmtT(v){ return v === null || v === undefined ? "—" : v.toFixed(1) + "s"; }
+function panelBox(){
+  ctx.fillStyle = "rgba(5,6,16,0.95)"; rr(110, 46, 740, 448, 14); ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = 1; rr(110, 46, 740, 448, 14); ctx.stroke();
+}
+function drawBoard(){
+  panelBox();
+  ctx.textAlign = "center"; ctx.fillStyle = "#fff"; ctx.font = "bold 20px system-ui";
+  ctx.fillText("排行榜", 480, 92);
+  ctx.font = "14px system-ui"; ctx.fillStyle = "#8d99ae";
+  for (const bx of [150, 520]){
+    ctx.textAlign = "left";   ctx.fillText("关卡", bx, 126);
+    ctx.textAlign = "center"; ctx.fillText("最速", bx + 170, 126); ctx.fillText("最少移位", bx + 290, 126);
+  }
+  ctx.font = "14px system-ui";
+  for (let i = 0; i < LEVELS.length; i++){
+    const bx = i < 15 ? 150 : 520, y = 150 + (i % 15) * 20, rec = records.lv[i];
+    ctx.textAlign = "left"; ctx.fillStyle = "#dfe3ee";
+    ctx.fillText("第 " + (i + 1) + " 关", bx, y);
+    ctx.textAlign = "center"; ctx.fillStyle = "#fff";
+    ctx.fillText(fmtT(rec ? rec.t : null), bx + 170, y);
+    ctx.fillText(rec && rec.s !== null && rec.s !== undefined ? String(rec.s) : "—", bx + 290, y);
+  }
+  const y = 452;
+  ctx.textAlign = "left"; ctx.fillStyle = "#ffd166";
+  ctx.fillText("全程", 150, y);
+  ctx.textAlign = "center";
+  ctx.fillText(fmtT(records.run.t), 320, y);
+  ctx.fillText(records.run.s === null || records.run.s === undefined ? "—" : String(records.run.s), 440, y);
+  ctx.fillStyle = "#8d99ae"; ctx.font = "13px system-ui";
+  ctx.fillText("点任意处关闭", 480, 478);
+}
+function drawAchPanel(){
+  panelBox();
+  ctx.textAlign = "center"; ctx.fillStyle = "#fff"; ctx.font = "bold 20px system-ui";
+  ctx.fillText("成就", 480, 92);
+  ACH.forEach((a, i) => {
+    const y = 150 + i * 52, got = achDone.includes(a.id);
+    ctx.textAlign = "left"; ctx.fillStyle = got ? "#ffd166" : "#dfe3ee"; ctx.font = "16px system-ui";
+    ctx.fillText(a.name, 190, y);
+    ctx.fillStyle = "#8d99ae"; ctx.font = "14px system-ui";
+    ctx.fillText(a.desc, 190, y + 22);
+    ctx.textAlign = "right"; ctx.fillStyle = got ? "#51cf66" : "#5b6478"; ctx.font = "16px system-ui";
+    ctx.fillText(got ? "已达成" : "未达成", 770, y);
+  });
+  ctx.textAlign = "center"; ctx.fillStyle = "#8d99ae"; ctx.font = "13px system-ui";
+  ctx.fillText("点任意处关闭", 480, 478);
+}
+function drawWin(){
+  const W = CONFIG.viewW, H = CONFIG.viewH;
+  ctx.fillStyle = "rgba(5,6,16,0.8)"; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#51cf66"; ctx.font = "bold 52px system-ui";
+  ctx.fillText("全部移位完成", W / 2, 216);
+  ctx.fillStyle = "#dfe3ee"; ctx.font = "20px system-ui";
+  ctx.fillText("用时 " + runTime.toFixed(1) + " 秒 · 移位 " + runShifts + " 次 · 死亡 " + deaths + " 次", W / 2, 268);
+  if (achToast){
+    ctx.fillStyle = "#ffd166"; ctx.font = "16px system-ui";
+    ctx.fillText(achToast, W / 2, 306);
+  }
+  ctx.fillStyle = "#8d99ae"; ctx.font = "15px system-ui";
+  ctx.fillText("点任意处回到标题", W / 2, 362);
 }
 
-/* ---------------- 主循环（真实游玩） ---------------- */
-let auto = true, acc = 0, lastTs = -1;
-function loop(ts) {
-  requestAnimationFrame(loop);
-  if (lastTs < 0) { lastTs = ts; draw(); return; }
-  let dt = (ts - lastTs) / 1000; lastTs = ts;
-  if (dt > 0.1) dt = 0.1;
-  if (auto) {
-    acc += dt;
-    while (acc >= STEP) { stepOnce(); acc -= STEP; }
-  }
+/* ---------------- loop ---------------- */
+let last = performance.now();
+let frozen = false; // test-only freeze (set via __game.freeze)
+function frame(now){
+  const dt = Math.min((now - last) / 1000, 0.033); last = now;
+  if (!frozen) step(dt);
   draw();
+  requestAnimationFrame(frame);
 }
-requestAnimationFrame(loop);
+if (!settings.music) Music.setMuted(true);
+loadLevel(0);
+requestAnimationFrame(frame);
 
-/* ---------------- 测试钩子 ---------------- */
-function snapshot() {
-  return {
-    frame, time: frame * STEP,
-    x: P.x, y: P.y, vx: P.vx, vy: P.vy,
-    grounded: P.grounded, dead: P.dead, canControl: !P.dead,
-    coyoteLeft: P.coyote, bufferLeft: P.buffer,
-    deaths, won, deathFrame, respawnFrame
-  };
-}
-function resetAll() {
-  frame = 0; deaths = 0; won = false; deathFrame = -1; respawnFrame = -1;
-  keys.left = keys.right = keys.jump = false; prevJump = false;
-  P.x = LEVEL.spawn.x; P.y = LEVEL.spawn.y; P.vx = 0; P.vy = 0;
-  P.grounded = true; P.face = 1; P.coyote = 0; P.buffer = 0; P.cutDone = true;
-  P.dead = false; P.freeze = 0;
-}
+/* test hooks (read state + use the real controls) */
 window.__game = {
-  config: CFG, level: LEVEL, STEP,
-  state: snapshot,
-  reset: resetAll,
-  setAuto(v) { auto = !!v; },
-  teleport(x, y) { P.x = x; P.y = y; P.vx = 0; P.vy = 0; P.grounded = false; P.coyote = 0; P.buffer = 0; },
-  keyDown(k) { setKey(k, true); },
-  keyUp(k) { setKey(k, false); },
-  press(k, steps) { /* 按住 k 若干步后松开（同步执行） */ setKey(k, true); for (let i = 0; i < steps; i++) stepOnce(); setKey(k, false); },
-  step(n) { for (let i = 0; i < n; i++) stepOnce(); },
-  /* 事件脚本：events=[{at:相对步, do:'down'|'up', key}]，返回逐帧 trace */
-  run(events, totalSteps) {
-    const ev = new Map();
-    for (const e of events || []) {
-      if (!ev.has(e.at)) ev.set(e.at, []);
-      ev.get(e.at).push(e);
-    }
-    const trace = [];
-    for (let i = 0; i < totalSteps; i++) {
-      const list = ev.get(i);
-      if (list) for (const e of list) setKey(e.key, e.do === "down");
-      stepOnce();
-      trace.push({
-        f: frame, x: +P.x.toFixed(3), y: +P.y.toFixed(3),
-        vx: +P.vx.toFixed(2), vy: +P.vy.toFixed(2),
-        g: P.grounded ? 1 : 0, dead: P.dead ? 1 : 0, deaths
-      });
-    }
-    return trace;
-  }
+  get screen(){ return screen; }, get ring(){ return ring; },
+  get level(){ return levelIdx; }, get deaths(){ return deaths; },
+  get unlocked(){ return unlocked; },
+  get runShifts(){ return runShifts; },
+  get records(){ return records; },
+  get ach(){ return achDone.slice(); },
+  get player(){ return { x: player.x, y: player.y, grounded: player.grounded }; },
+  get tut(){ return { idx: tutIdx, total: tutSteps().length, current: tutCurrent() ? tutCurrent().text : null }; },
+  get inverted(){ return inInvert(); }, get locked(){ return inLock(); },
+  get phase(){ return runPhase; },
+  get trap(){ return { rows: trapRows.map(r => ({ x: r.x, p: Math.round(trapProgress(r) * 100) / 100 })), scorch: trapScorch.length, hint: trapHintArmed }; },
+  get evDir(){ return evWarn ? evWarn.dir : 0; },
+  pressShift, loadLevel: (i) => { loadLevel(i); screen = "play"; },
+  // test-only: place the player (auto-run has no stop input; used to exercise the trap kill branch)
+  warp: (x, y) => { player.x = x; if (y !== undefined) player.y = y; player.vy = 0; },
+  // test-only: freeze physics at a given run phase (for stride screenshots)
+  freeze: (ph) => { runPhase = ph; frozen = true; },
+  unfreeze: () => { frozen = false; }
 };
 </script>
 </body>
