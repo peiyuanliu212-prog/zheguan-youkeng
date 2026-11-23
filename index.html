@@ -1547,29 +1547,38 @@ function curState(){ return CONFIG.states[ring]; }
 function platActive(p){ const s = curState().plat; return p.set === "AB" || p.set === s; }
 function spikeActive(s){ return s.set === curState().plat; }
 
-function loadLevel(i){
-  levelIdx = i; level = LEVELS[i];
-  ring = 0; tutIdx = 0; shiftCD = 0; coyote = 0; airFlip = true;
-  levelShifts = 0; levelTime = 0; levelDeathsStart = deaths;
-  attemptTime = 0; evWarn = null; evDone = {}; orbTaken = {};
-  trapRows = []; trapScorch = []; trapHintArmed = false; trapHintEver = false; deathFx = null; runPhase = 0;
-  checkpoint = null; groundTime = 0; revivesUsed = 0; invulnT = 0;
-  shield = false; shieldClaimed = false; shieldOfferT = 0; shieldFxT = 0; shieldBusy = false; shieldChipRect = null;
-  linkShiftCount = 0; phasePrev = (level.phases || []).map(p => phaseOf(p)); phasePulse = (level.phases || []).map(() => 0);
+/* —— 统一开局重置（一局一份预算，主人 2026-11-24 追加口径） ——
+   「一局」＝一次开局：loadLevel 进关、死亡面板「重玩本关」、Shift/触控垫快捷
+   重玩、R 键重开，全走这一份重置——复活已用标志、护盾状态/已领标志、检查点
+   （含历史）清空、本局死亡计数与本局计时（attemptTime）归零。上一版把复活
+   计数只挂在 loadLevel 上，关内 respawn 不重置：复活用完点「重玩本关」仍显示
+   已用完、必须退出重进，主人真机抓到后改此口径。
+   注意：本关死亡数（deaths - levelDeathsStart）是统计量，由 loadLevel 的
+   levelDeathsStart 管，跨重玩继续累计，resetRun 绝不动它。 */
+function resetRun(){
+  ring = 0; shiftCD = 0; coyote = 0; airFlip = true;
+  attemptTime = 0; linkShiftCount = 0;
+  evWarn = null; evDone = {}; orbTaken = {};
+  phasePrev = (level.phases || []).map(p => phaseOf(p)); phasePulse = (level.phases || []).map(() => 0);
   player.x = level.spawn.x; player.y = level.spawn.y;
   player.vx = 0; player.vy = 0; player.grounded = false;
-  camX = 0; particles = [];
-}
-function respawn(){
-  player.x = level.spawn.x; player.y = level.spawn.y;
-  player.vx = 0; player.vy = 0;
-  ring = 0; shiftCD = 0; coyote = 0; airFlip = true;
-  attemptTime = 0; evWarn = null; evDone = {}; orbTaken = {};
-  checkpoint = null; groundTime = 0; invulnT = 0;
-  linkShiftCount = 0; phasePrev = (level.phases || []).map(p => phaseOf(p)); phasePulse = (level.phases || []).map(() => 0);
+  checkpoint = null; checkpoints = []; groundTime = 0; invulnT = 0;
+  revivesUsed = 0; runDeaths = 0;
+  shield = false; shieldClaimed = false; shieldOfferT = 0; shieldFxT = 0; shieldBusy = false; shieldChipRect = null;
   trapRows = [];
   trapHintArmed = lastDeathTrap && !trapHintEver;
   lastDeathTrap = false;
+}
+function loadLevel(i){
+  levelIdx = i; level = LEVELS[i];
+  tutIdx = 0;
+  levelShifts = 0; levelTime = 0; levelDeathsStart = deaths;
+  trapScorch = []; trapHintEver = false; lastDeathTrap = false; deathFx = null; runPhase = 0;
+  camX = 0; particles = [];
+  resetRun();
+}
+function respawn(){
+  resetRun();
 }
 
 let denyT = 0; // ratchet deny feedback timer
@@ -1601,21 +1610,27 @@ let trapHintArmed = false, trapHintEver = false;
 let lastDeathTrap = false;
 let deathFx = null;       // {x, y, grav, t} 死亡压扁残影（定格播完弹死亡面板，不再自动重生）
 /* —— 死亡自选：安全检查点 / 广告复活 ——
-   检查点＝玩家最后一次连续站在实地面上 ≥0.3s 的位置（连同当时 ring），只存内存、
-   进关重置；记录发生在每步全部致命判定之后，且与陷阱刺排/活刺/巡逻刺重叠的位置
-   不记（与致命判定同口径的盒子），不把死点记成安全点。广告复活每局上限 1 次
-   （主人 2026-11-24 定版：一局＝一次进关，退出重进/通关后再来恢复；loadLevel
-   重置计数，关内重玩 respawn 不重置），复活后 1s 无敌防落点连环死。 */
-let checkpoint = null;    // {x, y, ring}
+   检查点＝玩家连续站在实地面上 ≥0.3s 的位置（连同当时 ring），只存内存、每局
+   重置；除最新点 checkpoint 外另存一份历史 checkpoints（每前进 ≥40px 或换 ring
+   记一条，供复活选点回退）。记录发生在每步全部致命判定之后，且与陷阱刺排/活刺/
+   巡逻刺重叠的位置不记（与致命判定同口径的盒子），不把死点记成安全点。
+   广告复活每局上限 1 次（主人 2026-11-24 定版＋追加：一局＝一次开局，loadLevel
+   与关内重开 respawn 都重置——见 resetRun）。复活落点不取最新点，而是从历史里
+   选「当前环下前方约 1.5 秒跑程内无致命危险」的最近一点（主人真机反馈：最新点
+   紧贴刺阵时复活落地即死），都没有就回本关起点；复活后 1.5s 无敌。 */
+let checkpoint = null;    // {x, y, ring} 最新安全候选点
+let checkpoints = [];     // 安全候选点历史（时间序，复活选点从新到旧回退）
 let groundTime = 0;       // 连续着地计时（秒）
 let revivesUsed = 0;      // 本局已用广告复活次数
+let runDeaths = 0;        // 本局（本次开局以来）死亡次数：护盾芯片「本局还没死过」口径
 let invulnT = 0;          // 复活后无敌剩余（秒）
 const REVIVE_MAX = 1;
 /* —— 护盾（主人 2026-11-24 定版） ——
    每局开局 6 秒内、本局还没死过时，屏幕左上出现芯片「看广告领护盾」；点它冻结
    游戏走广告，成功发盾继续，取消/失败直接继续不惩罚。持有护盾撞致命物：不死、
    不计死亡数，消耗护盾＋1.5s 无敌闪烁＋碎盾金环反馈。每局最多领 1 个（领过不
-   再出芯片），未用完离关作废、不结转（loadLevel 全量重置）。 */
+   再出芯片），未用完离关作废、不结转（resetRun 统一重置：进关与关内重开同口径，
+   新局芯片重新出现；「本局还没死过」按 runDeaths 计，不按本关累计死亡）。 */
 let shield = false;         // 本局持有护盾
 let shieldClaimed = false;  // 本局已领过护盾
 let shieldOfferT = 0;       // 本局进行计时（芯片 6 秒窗口，随 step 推进；广告冻结时不走）
@@ -1624,7 +1639,7 @@ let shieldFxT = 0;          // 碎盾视觉反馈剩余（秒）
 let shieldChipRect = null;  // 本帧芯片命中区（drawShieldChip 刷新）
 function shieldChipVisible(){
   return screen === "play" && !shield && !shieldClaimed && !shieldBusy
-      && (deaths - levelDeathsStart) === 0 && shieldOfferT < 6;
+      && runDeaths === 0 && shieldOfferT < 6;
 }
 async function claimShield(){
   if (shieldBusy || shield || shieldClaimed) return;
@@ -1814,7 +1829,8 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "KeyM") { audio(); settings.music = !Music.toggle(); saveSettings(); }
   if (e.code === "Escape" && screen === "title") titlePanel = null;
   if (e.code === "Escape" && screen === "map"){
-    if (mapPanel) mapPanel = null;
+    if (mapPanel === "skins" && skinsReturn){ mapCard = skinsReturn.level; skinsReturn = null; mapPanel = null; }
+    else if (mapPanel) mapPanel = null;
     else if (gateCard !== null) gateCard = null;
     else if (mapCard !== null) mapCard = null;
     else screen = "title";
@@ -1846,7 +1862,7 @@ cv.addEventListener("pointerdown", (e) => {
       x >= skinHintBtn.x && x <= skinHintBtn.x + skinHintBtn.w && y >= skinHintBtn.y && y <= skinHintBtn.y + skinHintBtn.h){
     // 从结算页跳形象页（现挂在地图页顶栏）：先把本关解锁落账，别让跳页吞掉进度
     if (screen === "clear" && levelIdx + 1 > unlocked) { unlocked = Math.min(levelIdx + 1, LEVELS.length - 1); saveUnlock(); }
-    screen = "map"; mapPanel = "skins"; mapCard = null;
+    screen = "map"; mapPanel = "skins"; mapCard = null; skinsReturn = null;
     return;
   }
   if (screen === "clear" || screen === "win"){
@@ -1972,9 +1988,16 @@ function step(dt){
   // fell / flew out
   if (player.y > CONFIG.killBelowY || player.y < CONFIG.killAboveY) { die(); return; }
   // 安全检查点记录：本步已通过全部致命判定（活着的实地面站立）才记——连续着地 ≥0.3s
-  // 的最后位置＋当时 ring；压着陷阱刺排或与活刺/巡逻刺重叠的位置不记（不把死点记成安全点）
-  if (player.grounded && groundTime >= 0.3 && !trapRowOverlap() && !spikeOverlap())
+  // 的最后位置＋当时 ring；压着陷阱刺排或与活刺/巡逻刺重叠的位置不记（不把死点记成安全点）。
+  // 历史表每前进 ≥40px 或换 ring 追加一条（复活选点回退用），上限 60 条。
+  if (player.grounded && groundTime >= 0.3 && !trapRowOverlap() && !spikeOverlap()){
     checkpoint = { x: player.x, y: player.y, ring };
+    const lastCp = checkpoints[checkpoints.length - 1];
+    if (!lastCp || lastCp.ring !== ring || Math.abs(checkpoint.x - lastCp.x) >= 40){
+      checkpoints.push(checkpoint);
+      if (checkpoints.length > 60) checkpoints.shift();
+    }
+  }
   // goal (zone box; works for floor flags and ceiling flags)
   const g = level.goal;
   if (overlaps({ x: player.x, y: player.y, w: S, h: S }, g)){
@@ -2012,7 +2035,7 @@ function die(){
     sfx("goal");
     return;
   }
-  deaths++; sfx("die"); burst(player.x + 15, player.y + 15, "#ff5d5d");
+  deaths++; runDeaths++; sfx("die"); burst(player.x + 15, player.y + 15, "#ff5d5d");
   deathFx = { x: player.x, y: player.y, grav: curState().grav, t: SHOT ? 3 : 0.45, frame: naiwaFrame };
   // 陷阱死提示在死亡当下武装（与旧版即时重开同口径：下一次尝试只显示一次）
   if (lastDeathTrap && !trapHintEver) trapHintArmed = true;
@@ -2738,7 +2761,12 @@ function drawSkinsPanel(){
 function handleSkinClick(x, y){
   for (const b of skinBtns){
     if (x < b.x || x > b.x + b.w || y < b.y || y > b.y + b.h) continue;
-    if (b.action === "back"){ titlePanel = null; mapPanel = null; }
+    if (b.action === "back"){
+      // 返回语义：从选关卡穿搭入口进的 → 回地图并恢复那张选关卡；其余（地图顶栏/
+      // 结算入口/标题）→ 普通关闭浮层。形象页里换的装已即时落存档，卡里开始游戏即新装。
+      if (skinsReturn){ mapCard = skinsReturn.level; skinsReturn = null; mapPanel = null; }
+      else { titlePanel = null; mapPanel = null; }
+    }
     else if (b.action === "select"){ skins.current = b.id; saveSkins(); }
     else if (b.action === "unlock") tryUnlockSkin(b.id);
     else if (b.action === "outfit"){
@@ -2871,14 +2899,53 @@ function deathReplay(){
   respawn();
   screen = "play";
 }
+/* 复活落点安全评估（主人 2026-11-24 反馈：复活到障碍旁边直接死）：
+   候选点本身不压致命盒还不够——自动奔跑没有停/跳，落点前方紧贴刺阵就是落地即死。
+   runwayClear 按候选点记录的 ring 评估：从落点起前方约 1.5 秒跑程（runSpeed×1.5，
+   条带再含玩家盒宽，保证无敌结束时人还没撞上危险）的扫掠条带内，不许有该 ring
+   下致命的普通刺、巡逻刺全程范围、当前正致命的相位刺、已升满的陷阱刺排。 */
+function spikeActiveFor(s, R){ return s.set === CONFIG.states[R].plat; }
+function runwayClear(cp){
+  const S = CONFIG.playerSize;
+  const strip = { x: cp.x + 5, y: cp.y + 5, w: CONFIG.runSpeed * 1.5 + (S - 10), h: S - 10 };
+  for (const s of level.spikes){
+    if (!spikeActiveFor(s, cp.ring)) continue;
+    const sb = s.hang ? { x: s.x, y: s.y, w: 26, h: 20 } : { x: s.x, y: s.y - 20, w: 26, h: 20 };
+    if (overlaps(strip, sb)) return false;
+  }
+  for (const m of level.movers || []){
+    if (!spikeActiveFor(m, cp.ring)) continue;
+    const dx = m.axis === "x" ? m.dist : 0, dy = m.axis === "y" ? m.dist : 0;
+    const y0 = m.hang ? m.y : m.y - 20;
+    const sb = { x: m.x - dx, y: y0 - dy, w: 26 + dx * 2, h: 20 + dy * 2 };
+    if (overlaps(strip, sb)) return false;
+  }
+  for (const p of level.phases || []){
+    if (phaseOf(p) !== cp.ring) continue;
+    if (overlaps(strip, phaseBox(p))) return false;
+  }
+  if (level.trap){
+    for (const r of trapRows){
+      if (trapProgress(r) < TRAP_DEADLY) continue;
+      if (overlaps(strip, { x: r.x, y: level.trap.surf - 20, w: TRAP_W, h: 20 })) return false;
+    }
+  }
+  return true;
+}
+/* 从历史里由新到旧选第一个跑道净空的点；都没有 → 本关起点（ring 0） */
+function reviveTarget(){
+  for (let i = checkpoints.length - 1; i >= 0; i--)
+    if (runwayClear(checkpoints[i])) return checkpoints[i];
+  return { x: level.spawn.x, y: level.spawn.y, ring: 0 };
+}
 function doRevive(){
   revivesUsed++;
-  if (checkpoint){ player.x = checkpoint.x; player.y = checkpoint.y; ring = checkpoint.ring; }
-  else { player.x = level.spawn.x; player.y = level.spawn.y; ring = 0; }
+  const rp = reviveTarget();
+  player.x = rp.x; player.y = rp.y; ring = rp.ring;
   player.vx = 0; player.vy = 0; player.grounded = false;
   shiftCD = 0; coyote = 0; airFlip = true;
   evWarn = null; groundTime = 0;
-  invulnT = 1.0;            // 1 秒无敌闪烁，防落点连环死
+  invulnT = 1.5;            // 1.5 秒无敌闪烁，与跑道净空评估同口径
   deathFx = null;
   screen = "play";
 }
@@ -2932,7 +2999,7 @@ function drawDeathPanel(){
   }
   if (canRevive){
     ctx.fillStyle = "#8d99ae"; ctx.font = "13px system-ui";
-    ctx.fillText("复活回到最近的安全落点 · 本局还可复活 " + (REVIVE_MAX - revivesUsed) + " 次", W / 2, by + bh + 26);
+    ctx.fillText("复活回到前方净空的安全落点 · 本局还可复活 " + (REVIVE_MAX - revivesUsed) + " 次", W / 2, by + bh + 26);
   }
 }
 
@@ -3008,6 +3075,7 @@ const MAP_REGIONS = [
 ];
 let mapPanel = null;            // null | "ach" | "skins" | "settings"（地图页浮层；排行榜改走各平台平台榜，drawBoard 代码保留但已无入口能置为 "board"）
 let mapCard = null;             // 选关弹窗的关卡索引（null＝未打开）
+let skinsReturn = null;         // 形象页返回目标：{type:"card", level}＝从选关卡穿搭入口进的，返回恢复那张卡；null＝普通返回（地图顶栏/结算入口进的，回地图）
 let gateCard = null;            // 区域广告门解锁卡的区号（1/2，null＝未打开；与 mapCard 互斥）
 let gateFailFree = false;       // 本次开卡期间广告已失败（非取消）→ 卡上显示免费兜底入口
 let mapBtns = [], cardBtns = [], settingsBtns = [], gateBtns = [];
@@ -3214,34 +3282,23 @@ function drawMapCard(i){
   ctx.fillStyle = "#14142b"; ctx.font = "bold 17px system-ui";
   ctx.fillText("开始游戏", 748, 390);
   cardBtns.push({ x: 660, y: 362, w: 176, h: 44, kind: "start" });
-  // 穿搭紧凑区：三槽点选轮换已拥有件（无拥有件时点槽＝解锁该槽第一件未解锁）
-  const frogOn = skins.current === "frog", frogOwned = skins.unlocked.includes("frog");
-  ctx.textAlign = "left"; ctx.fillStyle = "#8d99ae"; ctx.font = "12px system-ui";
-  ctx.fillText(!frogOwned ? "穿搭 · 奶蛙专属（先解锁奶蛙）" : frogOn ? "穿搭 · 点槽位轮换" : "穿搭 · 换上奶蛙后可穿", 336, 430);
-  const SLOT_LABEL = { hat: "帽子", clothes: "衣服", hand: "手持" };
-  ["hat", "clothes", "hand"].forEach((slot, k) => {
-    const x = 336 + k * 162, y = 438, w = 150, h = 40;
-    const wornId = skins.outfits[slot], worn = wornId ? outfitDef(wornId) : null;
-    ctx.fillStyle = worn ? "rgba(255,209,102,0.13)" : "rgba(255,255,255,0.05)";
-    rr(x, y, w, h, 9); ctx.fill();
-    ctx.strokeStyle = worn ? "#ffd166" : "rgba(255,255,255,0.14)"; ctx.lineWidth = worn ? 2 : 1;
-    rr(x, y, w, h, 9); ctx.stroke();
-    ctx.fillStyle = "#fff"; ctx.font = "13px system-ui"; ctx.textAlign = "center";
-    ctx.fillText(SLOT_LABEL[slot] + "：" + (worn ? worn.name : "无"), x + w / 2, y + 25);
-    if (!frogOn){ ctx.fillStyle = "rgba(5,6,16,0.5)"; rr(x, y, w, h, 9); ctx.fill(); }
-    else cardBtns.push({ x, y, w, h, kind: "slot", slot });
-  });
-  // 未解锁穿搭的看视频解锁入口（每槽一行小字按钮，指向该槽第一件未解锁）
-  if (frogOwned){
-    ["hat", "clothes", "hand"].forEach((slot, k) => {
-      const next = OUTFIT_DEFS.find(d => d.slot === slot && !skins.unlockedOutfits.includes(d.id));
-      if (!next) return;
-      const x = 336 + k * 162, y = 484;
-      ctx.fillStyle = "#ffd166"; ctx.font = "12px system-ui"; ctx.textAlign = "center";
-      ctx.fillText("＋ 解锁" + next.name, x + 75, y + 15);
-      cardBtns.push({ x, y, w: 150, h: 22, kind: "unlockOutfit", id: next.id });
-    });
-  }
+  // 穿搭入口（主人 2026-11-24：卡里盲轮换看不出换了什么，改开形象页带预览换）：
+  // 一行现状摘要＋「去换装 ›」，点它打开形象页（大预览＋逐件卡片），返回恢复本卡。
+  // 卡内左侧预览已是完整穿搭叠层（drawFrogStackAt 走 frogLayers 合成）。
+  const frogOwned = skins.unlocked.includes("frog");
+  const wy = 438, wh = 40;
+  ctx.fillStyle = "rgba(255,255,255,0.05)"; rr(336, wy, 500, wh, 9); ctx.fill();
+  ctx.strokeStyle = "rgba(255,209,102,0.5)"; ctx.lineWidth = 1; rr(336, wy, 500, wh, 9); ctx.stroke();
+  ctx.textAlign = "left"; ctx.fillStyle = "#dfe3ee"; ctx.font = "13px system-ui";
+  const summary = !frogOwned ? "穿搭 · 奶蛙专属（先解锁奶蛙）"
+    : "穿搭：" + ["hat", "clothes", "hand"].map(slot => {
+        const d = skins.outfits[slot] ? outfitDef(skins.outfits[slot]) : null;
+        return d ? d.name : "无";
+      }).join(" · ");
+  ctx.fillText(summary, 352, wy + 25);
+  ctx.textAlign = "right"; ctx.fillStyle = "#ffd166"; ctx.font = "bold 13px system-ui";
+  ctx.fillText("去换装 ›", 820, wy + 25);
+  cardBtns.push({ x: 336, y: wy, w: 500, h: wh, kind: "wardrobe" });
 }
 /* 区域广告门解锁：看完广告 → 整区永久解锁落存档；用户取消 → 保持锁定、卡不关；
    广告失败（加载失败/无填充，非取消）→ 卡上露出免费兜底入口，绝不把人锁死在门外。 */
@@ -3291,15 +3348,6 @@ function drawGateCard(){
     ctx.fillText("广告暂不可用，本次免费解锁", 480, 488);
     gateBtns.push({ x: 330, y: 462, w: 300, h: 40, kind: "free" });
   }
-}
-function cycleOutfit(slot){
-  const owned = OUTFIT_DEFS.filter(d => d.slot === slot && skins.unlockedOutfits.includes(d.id)).map(d => d.id);
-  if (!owned.length) return false;
-  const seq = [null, ...owned];
-  skins.outfits[slot] = seq[(seq.indexOf(skins.outfits[slot]) + 1) % seq.length];
-  saveSkins();
-  if (skins.outfits[slot]) sfx("goal");
-  return true;
 }
 /* 设置面板（与标题旧入口同一 settings 存储：音乐/音效开关） */
 function drawSettingsPanel(){
@@ -3361,14 +3409,11 @@ function handleMapClick(x, y){
         if (skins.unlocked.includes(b.id)){ skins.current = b.id; saveSkins(); }
         else tryUnlockSkin(b.id);
       }
-      else if (b.kind === "slot"){
-        if (skins.current !== "frog") return;
-        if (!cycleOutfit(b.slot)){
-          const next = OUTFIT_DEFS.find(d => d.slot === b.slot && !skins.unlockedOutfits.includes(d.id));
-          if (next) tryUnlockOutfit(next.id);
-        }
+      else if (b.kind === "wardrobe"){
+        // 去换装：打开形象页，记住返回要恢复这张选关卡（mapCard 不清，面板盖在上面）
+        skinsReturn = { type: "card", level: mapCard };
+        mapPanel = "skins";
       }
-      else if (b.kind === "unlockOutfit") tryUnlockOutfit(b.id);
       return;
     }
     mapCard = null;   // 点卡外关闭
@@ -3377,7 +3422,7 @@ function handleMapClick(x, y){
   for (const b of mapBtns){
     if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h){
       if (b.id === "back") screen = "title";
-      else mapPanel = b.id;
+      else { if (b.id === "skins") skinsReturn = null; mapPanel = b.id; }
       return;
     }
   }
@@ -3438,6 +3483,10 @@ window.__game = {
   get gateFree(){ return gateFailFree; },
   ads: { failNext: () => { adFailNext = true; } },
   get checkpoint(){ return checkpoint ? { x: checkpoint.x, y: checkpoint.y, ring: checkpoint.ring } : null; },
+  get checkpoints(){ return checkpoints.length; },
+  get revivePoint(){ return reviveTarget(); },
+  get runDeaths(){ return runDeaths; },
+  get skinsReturn(){ return skinsReturn; },
   get invuln(){ return invulnT; },
   get deadBtns(){ return deadBtns.map(b => ({ action: b.action, disabled: !!b.disabled })); },
   get evDir(){ return evWarn ? evWarn.dir : 0; },
