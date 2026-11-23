@@ -1333,10 +1333,36 @@ try { unlocked = Math.max(0, Math.min(LEVELS.length - 1, parseInt(localStorage.g
 function saveUnlock(){ try { localStorage.setItem("youkeng_save_v1", String(unlocked)); } catch(e) {} }
 // 测试直达：?unlock=30 打开即全关解锁（并写入存档，之后普通链接也保持解锁）
 try { if (new URLSearchParams(location.search).get("unlock") === "30") { unlocked = LEVELS.length - 1; saveUnlock(); } } catch(e) {}
+/* ---------------- 区域广告门（主人 2026-11-24 定版） ----------------
+   进阶区（索引 10–19）、高阶区（索引 20–31）默认被广告门锁住：通关上一区
+   最后一关后，必须看一次广告才能永久解锁该区（每区只看一次，落存档）。
+   祖父条款：老存档进度前沿已越过某区第一关（unlocked > 区首关索引）→ 该区
+   视为已解锁，不让老玩家回头补看广告（下方初始化即按此豁免并落账，
+   ?unlock=30 的 unlocked=31 同样自动豁免两区）。 */
+function regionOf(i){ return i < 10 ? 0 : i < 20 ? 1 : 2; }
+const REGION_START = [0, 10, 20];
+let regionOpen = [true, false, false];
+try {
+  const r = JSON.parse(localStorage.getItem("youkeng_regions_v1") || "null");
+  if (Array.isArray(r)){ regionOpen[1] = !!r[1]; regionOpen[2] = !!r[2]; }
+} catch(e) {}
+function saveRegions(){ try { localStorage.setItem("youkeng_regions_v1", JSON.stringify(regionOpen)); } catch(e) {} }
+for (let r = 1; r <= 2; r++)
+  if (unlocked > REGION_START[r] && !regionOpen[r]){ regionOpen[r] = true; saveRegions(); }
+// i 所在区被广告门锁住时返回区号（1/2），否则 0
+function regionGateFor(i){ const r = regionOf(i); return (r >= 1 && !regionOpen[r]) ? r : 0; }
+// 跳地图并自动打开该区的广告门解锁卡（只由点击触发，绝不自动弹广告）
+function gotoGateCard(region){
+  screen = "map"; titlePanel = null; mapPanel = null; mapCard = null;
+  gateCard = region; gateFailFree = false;
+}
 let titleBtns = [];
 let uiBtns = [];
 let titlePanel = null;          // null | "board" | "ach" | "skins"
 function startLevel(i){
+  // 区域广告门拦截：目标关在未解锁区 → 不进关，跳地图开该区解锁卡（标题继续/Digit/选关卡共用此闸）
+  const g = regionGateFor(i);
+  if (g){ gotoGateCard(g); return; }
   audio();
   runTime = 0; deaths = 0; runShifts = 0; achToast = "";
   screen = "play"; loadLevel(i); Music.start();
@@ -1528,6 +1554,7 @@ function loadLevel(i){
   attemptTime = 0; evWarn = null; evDone = {}; orbTaken = {};
   trapRows = []; trapScorch = []; trapHintArmed = false; trapHintEver = false; deathFx = null; runPhase = 0;
   checkpoint = null; groundTime = 0; revivesUsed = 0; invulnT = 0;
+  shield = false; shieldClaimed = false; shieldOfferT = 0; shieldFxT = 0; shieldBusy = false; shieldChipRect = null;
   linkShiftCount = 0; phasePrev = (level.phases || []).map(p => phaseOf(p)); phasePulse = (level.phases || []).map(() => 0);
   player.x = level.spawn.x; player.y = level.spawn.y;
   player.vx = 0; player.vy = 0; player.grounded = false;
@@ -1576,13 +1603,37 @@ let deathFx = null;       // {x, y, grav, t} 死亡压扁残影（定格播完�
 /* —— 死亡自选：安全检查点 / 广告复活 ——
    检查点＝玩家最后一次连续站在实地面上 ≥0.3s 的位置（连同当时 ring），只存内存、
    进关重置；记录发生在每步全部致命判定之后，且与陷阱刺排/活刺/巡逻刺重叠的位置
-   不记（与致命判定同口径的盒子），不把死点记成安全点。广告复活每关上限 2 次，
-   复活后 1s 无敌防落点连环死。 */
+   不记（与致命判定同口径的盒子），不把死点记成安全点。广告复活每局上限 1 次
+   （主人 2026-11-24 定版：一局＝一次进关，退出重进/通关后再来恢复；loadLevel
+   重置计数，关内重玩 respawn 不重置），复活后 1s 无敌防落点连环死。 */
 let checkpoint = null;    // {x, y, ring}
 let groundTime = 0;       // 连续着地计时（秒）
-let revivesUsed = 0;      // 本关已用广告复活次数
+let revivesUsed = 0;      // 本局已用广告复活次数
 let invulnT = 0;          // 复活后无敌剩余（秒）
-const REVIVE_MAX = 2;
+const REVIVE_MAX = 1;
+/* —— 护盾（主人 2026-11-24 定版） ——
+   每局开局 6 秒内、本局还没死过时，屏幕左上出现芯片「看广告领护盾」；点它冻结
+   游戏走广告，成功发盾继续，取消/失败直接继续不惩罚。持有护盾撞致命物：不死、
+   不计死亡数，消耗护盾＋1.5s 无敌闪烁＋碎盾金环反馈。每局最多领 1 个（领过不
+   再出芯片），未用完离关作废、不结转（loadLevel 全量重置）。 */
+let shield = false;         // 本局持有护盾
+let shieldClaimed = false;  // 本局已领过护盾
+let shieldOfferT = 0;       // 本局进行计时（芯片 6 秒窗口，随 step 推进；广告冻结时不走）
+let shieldBusy = false;     // 领盾广告流程中：step 冻结、输入不响应移位
+let shieldFxT = 0;          // 碎盾视觉反馈剩余（秒）
+let shieldChipRect = null;  // 本帧芯片命中区（drawShieldChip 刷新）
+function shieldChipVisible(){
+  return screen === "play" && !shield && !shieldClaimed && !shieldBusy
+      && (deaths - levelDeathsStart) === 0 && shieldOfferT < 6;
+}
+async function claimShield(){
+  if (shieldBusy || shield || shieldClaimed) return;
+  shieldBusy = true;                        // step() 见 shieldBusy 冻结
+  const ok = await unlockViaAd();           // 真广告优先 / Pages 测试桩，看完才算数
+  shieldBusy = false;
+  if (ok && screen === "play"){ shield = true; shieldClaimed = true; sfx("goal"); }
+  // 取消/失败：盾不发、游戏直接继续，绝不锁人
+}
 function trapRowOverlap(){
   if (!level.trap) return false;
   const S = CONFIG.playerSize;
@@ -1747,6 +1798,7 @@ const Music = (() => {
 /* ---------------- input ---------------- */
 function pressShift(dir){
   audio();
+  if (shieldBusy) return;   // 领护盾广告中：世界已冻结，移位输入不生效
   if (screen === "dead") { deathReplay(); return; }   // 死亡面板在时：任意移位键＝直接重玩本关（保快速循环）
   if (screen === "title" && titlePanel) { titlePanel = null; return; }
   if (screen === "title") { runTime = 0; deaths = 0; runShifts = 0; achToast = ""; screen = "play"; loadLevel(0); Music.start(); return; }
@@ -1763,6 +1815,7 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "Escape" && screen === "title") titlePanel = null;
   if (e.code === "Escape" && screen === "map"){
     if (mapPanel) mapPanel = null;
+    else if (gateCard !== null) gateCard = null;
     else if (mapCard !== null) mapCard = null;
     else screen = "title";
   }
@@ -1783,6 +1836,11 @@ cv.addEventListener("pointerdown", (e) => {
         return;
       }
     }
+  }
+  if (screen === "clear" && regionHintBtn &&
+      x >= regionHintBtn.x && x <= regionHintBtn.x + regionHintBtn.w && y >= regionHintBtn.y && y <= regionHintBtn.y + regionHintBtn.h){
+    gotoGateCard(regionHintBtn.region);
+    return;
   }
   if ((screen === "clear" || screen === "win") && skinHintBtn &&
       x >= skinHintBtn.x && x <= skinHintBtn.x + skinHintBtn.w && y >= skinHintBtn.y && y <= skinHintBtn.y + skinHintBtn.h){
@@ -1805,6 +1863,11 @@ cv.addEventListener("pointerdown", (e) => {
     if (padR && x >= padR.x && x <= padR.x + padR.w && y >= padR.y && y <= padR.y + padR.h) { deathReplay(); return; }
     return;
   }
+  if (screen === "play" && shieldChipRect && shieldChipVisible()
+      && x >= shieldChipRect.x && x <= shieldChipRect.x + shieldChipRect.w
+      && y >= shieldChipRect.y && y <= shieldChipRect.y + shieldChipRect.h){
+    claimShield(); return;
+  }
   if (padL && x >= padL.x && x <= padL.x + padL.w && y >= padL.y && y <= padL.y + padL.h) pressShift(-1);
   else if (padR && x >= padR.x && x <= padR.x + padR.w && y >= padR.y && y <= padR.y + padR.h) pressShift(1);
   else if (screen !== "play") pressShift(1);
@@ -1823,7 +1886,8 @@ function overlaps(a, b){ return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y 
 function step(dt){
   // 过关结算停留等玩家点选（下一关/重玩/选关/主页），绝不自动跳下一关
   if (screen !== "play") return;
-  runTime += dt; levelTime += dt; attemptTime += dt;
+  if (shieldBusy) return;   // 领护盾广告流程中：世界冻结，广告回来再继续
+  runTime += dt; levelTime += dt; attemptTime += dt; shieldOfferT += dt;
   if (shiftCD > 0) shiftCD -= dt;
   const st = curState(), S = CONFIG.playerSize, PH = 22;
   player.vx = CONFIG.runSpeed * speedMul();
@@ -1850,6 +1914,7 @@ function step(dt){
   // 安全检查点计时：连续着地时间（记录动作在全机关卡判定之后，见下方 goal 前）
   if (player.grounded) groundTime += dt; else groundTime = 0;
   if (invulnT > 0) invulnT -= dt;
+  if (shieldFxT > 0) shieldFxT -= dt;
   let box = { x: player.x, y: player.y, w: S, h: S };
   // spikes
   box = { x: player.x + 5, y: player.y + 5, w: S - 10, h: S - 10 };
@@ -1938,6 +2003,15 @@ function step(dt){
 }
 function die(){
   if (invulnT > 0) return;   // 复活后 1s 无敌：不触发死亡（防落点连环死）
+  if (shield){
+    // 护盾抵命：不死亡、不计死亡数——消耗护盾＋1.5s 无敌闪烁＋碎盾金环，继续跑；
+    // 本局那 1 次广告复活不受影响（还没死过）。陷阱死标记一并清掉，别误武装提示。
+    shield = false; lastDeathTrap = false;
+    invulnT = 1.5; shieldFxT = 0.5;
+    burst(player.x + 15, player.y + 15, "#ffd166");
+    sfx("goal");
+    return;
+  }
   deaths++; sfx("die"); burst(player.x + 15, player.y + 15, "#ff5d5d");
   deathFx = { x: player.x, y: player.y, grav: curState().grav, t: SHOT ? 3 : 0.45, frame: naiwaFrame };
   // 陷阱死提示在死亡当下武装（与旧版即时重开同口径：下一次尝试只显示一次）
@@ -2284,6 +2358,14 @@ function draw(){
       ctx.globalAlpha = 1;
     }
   }
+  // 碎盾反馈：玩家身上金色扩散环（0.5 秒，纯视觉，与 die() 里的金粒子同帧触发）
+  if (shieldFxT > 0){
+    const k = 1 - shieldFxT / 0.5, S3 = CONFIG.playerSize;
+    ctx.globalAlpha = (1 - k) * 0.95;
+    ctx.strokeStyle = "#ffd166"; ctx.lineWidth = 3.5;
+    ctx.beginPath(); ctx.arc(player.x + S3 / 2, player.y + S3 / 2, 16 + 34 * k, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
   ctx.restore();
   if (flash > 0){ ctx.fillStyle = "rgba(255,255,255," + (flash * 0.5) + ")"; ctx.fillRect(0, 0, W, H); }
 
@@ -2297,6 +2379,7 @@ function draw(){
   if (screen === "clear") drawClearOverlay();
   if (screen === "win") drawWin();
   if (screen === "dead") drawDeathPanel();
+  drawShieldChip();
   // touch pads
   padL = { x: 16, y: H - 92, w: 196, h: 74 }; padR = { x: W - 212, y: H - 92, w: 196, h: 74 };
   if (screen === "play" && !SHOT){
@@ -2309,6 +2392,41 @@ function draw(){
     ctx.fillText(inv ? "◀ 后移" : "前移 ▶", padR.x + padR.w / 2, padR.y + 46);
   }
   drawTut();
+}
+/* 护盾小图标（Canvas 路径盾形） */
+function drawShieldIcon(cx, cy, color){
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - 9);
+  ctx.lineTo(cx + 7.5, cy - 6);
+  ctx.lineTo(cx + 7.5, cy + 1.5);
+  ctx.quadraticCurveTo(cx + 7.5, cy + 7.5, cx, cy + 10);
+  ctx.quadraticCurveTo(cx - 7.5, cy + 7.5, cx - 7.5, cy + 1.5);
+  ctx.lineTo(cx - 7.5, cy - 6);
+  ctx.closePath();
+  ctx.fillStyle = color; ctx.fill();
+}
+/* 护盾芯片：关卡名条下方（左上，不挡跑酷操作与触控垫）。可领时金边呼吸＋文案；
+   持有中变金色实心「护盾生效中」标识（不可点）。命中区 shieldChipRect 每帧刷新。 */
+function drawShieldChip(){
+  shieldChipRect = null;
+  if (screen !== "play") return;
+  if (shield){
+    const x = 14, y = 54, w = 132, h = 34;
+    ctx.fillStyle = "rgba(255,209,102,0.92)"; rr(x, y, w, h, 10); ctx.fill();
+    drawShieldIcon(x + 20, y + h / 2, "#14142b");
+    ctx.fillStyle = "#14142b"; ctx.font = "bold 14px system-ui"; ctx.textAlign = "left";
+    ctx.fillText("护盾生效中", x + 36, y + 22);
+    return;
+  }
+  if (!shieldChipVisible()) return;
+  const x = 14, y = 54, w = 196, h = 38;
+  const pulse = 0.7 + 0.3 * Math.sin(performance.now() / 240);
+  ctx.fillStyle = "rgba(8,10,24,0.85)"; rr(x, y, w, h, 11); ctx.fill();
+  ctx.strokeStyle = "rgba(255,209,102," + pulse.toFixed(3) + ")"; ctx.lineWidth = 1.8; rr(x, y, w, h, 11); ctx.stroke();
+  drawShieldIcon(x + 21, y + h / 2, "#ffd166");
+  ctx.fillStyle = "#ffd166"; ctx.font = "bold 14px system-ui"; ctx.textAlign = "left";
+  ctx.fillText("看广告领护盾", x + 38, y + 24);
+  shieldChipRect = { x, y, w, h };
 }
 function drawHUD(){
   const W = CONFIG.viewW, st = curState();
@@ -2461,16 +2579,21 @@ function drawAchPanel(){
    无真广告的环境（Pages）走测试桩：明确标注「测试环境」的 3 秒模拟广告，
    可取消，取消/失败绝不解锁。单飞：重复点不重复触发。 */
 let adBusy = false;
-function unlockViaAd(){
+let adFailNext = false;   // 测试专用：下一次广告按「加载失败/无填充」结算（验区域门免费兜底）
+/* 广告结果三态：ok＝看完 / cancel＝用户取消 / fail＝加载失败·无填充·回调超时。
+   区域广告门的免费兜底只认 fail 不认 cancel，故有详细版；其余入口（形象/复活/
+   护盾）继续用布尔版 unlockViaAd（仅 ok 算成功，口径不变）。 */
+function unlockViaAdDetailed(){
   return new Promise((resolve) => {
-    if (adBusy){ resolve(false); return; }
+    if (adBusy){ resolve("cancel"); return; }   // 已有广告在播：按未观看处理，不重复触发
+    if (adFailNext){ adFailNext = false; resolve("fail"); return; }
     if (window.Plat && Plat.ads && typeof Plat.ads.available === "function" && typeof Plat.ads.show === "function"){
       let avail = false;
       try { avail = !!Plat.ads.available(); } catch(e) {}
       if (avail){
         adBusy = true;
         let settled = false;
-        const done = (ok) => { if (!settled){ settled = true; adBusy = false; resolve(!!ok); } };
+        const done = (ok) => { if (!settled){ settled = true; adBusy = false; resolve(ok ? "ok" : "fail"); } };
         try {
           const r = Plat.ads.show("skin");
           if (r && typeof r.then === "function") r.then(done).catch(() => done(false));
@@ -2481,8 +2604,11 @@ function unlockViaAd(){
       }
     }
     adBusy = true;
-    showStubAd((ok) => { adBusy = false; resolve(!!ok); });
+    showStubAd((res) => { adBusy = false; resolve(res); });   // 桩广告回调 "ok"/"cancel"
   });
+}
+function unlockViaAd(){
+  return unlockViaAdDetailed().then(r => r === "ok");
 }
 function showStubAd(cb){
   const ov = document.createElement("div");
@@ -2500,7 +2626,7 @@ function showStubAd(cb){
     if (left <= 0) finish(true);
     else cnt.textContent = left + " 秒后完成";
   }, 1000);
-  function finish(ok){ if (finished) return; finished = true; clearInterval(timer); ov.remove(); cb(ok); }
+  function finish(ok){ if (finished) return; finished = true; clearInterval(timer); ov.remove(); cb(ok ? "ok" : "cancel"); }
   ov.querySelector("#stubAdCancel").addEventListener("click", () => finish(false));
 }
 async function tryUnlockSkin(id){
@@ -2632,7 +2758,12 @@ function handleSkinClick(x, y){
 let navBtns = [];
 function handleNav(action){
   audio();
-  if (action === "next"){ loadLevel(levelIdx + 1); screen = "play"; Music.start(); }
+  if (action === "next"){
+    // 下一关在广告门后：不直接进关，跳地图并自动打开该区解锁卡
+    const g = regionGateFor(levelIdx + 1);
+    if (g){ gotoGateCard(g); return; }
+    loadLevel(levelIdx + 1); screen = "play"; Music.start();
+  }
   else if (action === "replay"){ loadLevel(levelIdx); screen = "play"; Music.start(); }
   else if (action === "select"){ screen = "map"; titlePanel = null; mapPanel = null; mapCard = null; }
   else { screen = "title"; titlePanel = null; }
@@ -2672,6 +2803,25 @@ function drawClearOverlay(){
     { action: "home",   label: "主页" }
   ], H / 2 + 12, 150, 48, 14);
   drawSkinHint(96);
+  drawRegionHint(140);
+}
+/* 结算页区域门入口（通关一区最后一关且下一区未解锁时才显示，纯点击触发）：
+   点它跳地图并自动打开该区解锁卡；「下一关」按钮走同一道闸（handleNav 拦截）。 */
+let regionHintBtn = null;
+function drawRegionHint(dy){
+  regionHintBtn = null;
+  const g = regionGateFor(levelIdx + 1);
+  if (!g) return;
+  const W = CONFIG.viewW, H = CONFIG.viewH;
+  const label = "下一区 · " + MAP_REGIONS[g].name + "区需看广告解锁 —— 去解锁";
+  ctx.font = "15px system-ui"; ctx.textAlign = "center";
+  const w = ctx.measureText(label).width + 32;
+  const x = (W - w) / 2, y = H / 2 + dy;
+  ctx.fillStyle = "rgba(255,209,102,0.14)"; rr(x, y, w, 34, 9); ctx.fill();
+  ctx.strokeStyle = "rgba(255,209,102,0.6)"; ctx.lineWidth = 1; rr(x, y, w, 34, 9); ctx.stroke();
+  ctx.fillStyle = "#ffd166";
+  ctx.fillText(label, W / 2, y + 22);
+  regionHintBtn = { x, y, w, h: 34, region: g };
 }
 /* 结算页小字入口（奶蛙未解锁才显示，纯点击触发，绝不自动弹） */
 let skinHintBtn = null;
@@ -2755,7 +2905,7 @@ function drawDeathPanel(){
   deadBtns = [];
   const canRevive = revivesUsed < REVIVE_MAX;
   const defs = [
-    { action: "revive", label: canRevive ? "看广告复活" : "本关复活已用完", primary: canRevive, disabled: !canRevive },
+    { action: "revive", label: canRevive ? "看广告复活" : "本局复活已用完", primary: canRevive, disabled: !canRevive },
     { action: "replay", label: "重玩本关" },
     { action: "home",   label: "回主页" }
   ];
@@ -2782,7 +2932,7 @@ function drawDeathPanel(){
   }
   if (canRevive){
     ctx.fillStyle = "#8d99ae"; ctx.font = "13px system-ui";
-    ctx.fillText("复活回到最近的安全落点 · 本关还可复活 " + (REVIVE_MAX - revivesUsed) + " 次", W / 2, by + bh + 26);
+    ctx.fillText("复活回到最近的安全落点 · 本局还可复活 " + (REVIVE_MAX - revivesUsed) + " 次", W / 2, by + bh + 26);
   }
 }
 
@@ -2858,7 +3008,9 @@ const MAP_REGIONS = [
 ];
 let mapPanel = null;            // null | "ach" | "skins" | "settings"（地图页浮层；排行榜改走各平台平台榜，drawBoard 代码保留但已无入口能置为 "board"）
 let mapCard = null;             // 选关弹窗的关卡索引（null＝未打开）
-let mapBtns = [], cardBtns = [], settingsBtns = [];
+let gateCard = null;            // 区域广告门解锁卡的区号（1/2，null＝未打开；与 mapCard 互斥）
+let gateFailFree = false;       // 本次开卡期间广告已失败（非取消）→ 卡上显示免费兜底入口
+let mapBtns = [], cardBtns = [], settingsBtns = [], gateBtns = [];
 let mapShake = null;            // {i, t0} 点锁定节点的小震
 let mapHint = null;             // {text, t0} 地图页一行小字提示
 function levelCleared(i){
@@ -2867,8 +3019,9 @@ function levelCleared(i){
 }
 /* 地图节点：石刻徽章四态（小屏靠色相＋锁/勾图样区分，不依赖读数字）
    通关＝琥珀金渐变盘＋深金描边＋右上绿徽白勾；前沿＝区域 accent 盘＋白字＋呼吸脉冲；
-   已解锁未通关＝米白石盘＋accent 描边；未解锁＝深石板盘＋手绘锁（代替数字）。 */
-function drawMapNode(x, y, i, locked, cleared, frontier, accent, now){
+   已解锁未通关＝米白石盘＋accent 描边；未解锁＝深石板盘＋手绘锁（代替数字）。
+   广告门（gate）＝深盘＋锁＋金描边＋右下金徽白三角（播放），与普通进度锁一眼可分。 */
+function drawMapNode(x, y, i, locked, cleared, frontier, accent, now, gate){
   const r = frontier ? 18 : 16;
   // 柔和椭圆投影
   ctx.beginPath(); ctx.ellipse(x, y + r * 0.8, r * 0.98, r * 0.34, 0, 0, Math.PI * 2);
@@ -2887,16 +3040,17 @@ function drawMapNode(x, y, i, locked, cleared, frontier, accent, now){
     gr.addColorStop(0, "#ffe9a8"); gr.addColorStop(0.55, "#ffc95e"); gr.addColorStop(1, "#ef9a1c");
     ctx.fillStyle = gr;
   }
+  else if (gate) ctx.fillStyle = "#2e3242";
   else if (frontier) ctx.fillStyle = accent;
   else if (locked) ctx.fillStyle = "#2e3242";
   else ctx.fillStyle = "#f3ead8";
   ctx.fill();
   ctx.lineWidth = 2.5;
-  ctx.strokeStyle = cleared ? "#a86400" : frontier ? "rgba(255,255,255,0.9)" : locked ? "#6d6a8f" : accent;
+  ctx.strokeStyle = cleared ? "#a86400" : gate ? "#ffd166" : frontier ? "rgba(255,255,255,0.9)" : locked ? "#6d6a8f" : accent;
   ctx.stroke();
   // 内圈刻线（石刻感）
   ctx.beginPath(); ctx.arc(x, y, r - 5, 0, Math.PI * 2);
-  ctx.strokeStyle = cleared ? "rgba(122,72,0,0.32)" : frontier ? "rgba(255,255,255,0.35)" : locked ? "rgba(255,255,255,0.07)" : "rgba(96,84,52,0.20)";
+  ctx.strokeStyle = cleared ? "rgba(122,72,0,0.32)" : frontier && !gate ? "rgba(255,255,255,0.35)" : (locked || gate) ? "rgba(255,255,255,0.07)" : "rgba(96,84,52,0.20)";
   ctx.lineWidth = 1; ctx.stroke();
   // 上沿高光弧
   ctx.beginPath(); ctx.arc(x, y, r - 2.6, -Math.PI * 0.82, -Math.PI * 0.18);
@@ -2910,6 +3064,15 @@ function drawMapNode(x, y, i, locked, cleared, frontier, accent, now){
     ctx.fillStyle = "#2e3242";
     ctx.beginPath(); ctx.arc(x, y + 2.2, 1.9, 0, Math.PI * 2); ctx.fill();
     ctx.lineCap = "butt";
+    if (gate){
+      // 广告门标记：右下金徽＋深色播放三角（Canvas 画，不用 emoji）
+      const bx = x + r * 0.78, by = y + r * 0.78;
+      ctx.beginPath(); ctx.arc(bx, by, 7.5, 0, Math.PI * 2);
+      ctx.fillStyle = "#ffd166"; ctx.fill();
+      ctx.strokeStyle = "#14142b"; ctx.lineWidth = 1.2; ctx.stroke();
+      ctx.fillStyle = "#14142b";
+      ctx.beginPath(); ctx.moveTo(bx - 2.4, by - 3.6); ctx.lineTo(bx - 2.4, by + 3.6); ctx.lineTo(bx + 3.8, by); ctx.closePath(); ctx.fill();
+    }
     return;
   }
   // 数字（粗体）
@@ -2948,9 +3111,10 @@ function drawMap(){
       const age = now - mapShake.t0;
       if (age < 400) dx = Math.sin(age / 28) * 4 * (1 - age / 400);
     }
-    const locked = i > unlocked, cleared = levelCleared(i), frontier = i === unlocked && !cleared;
-    const accent = MAP_REGIONS[i < 10 ? 0 : i < 20 ? 1 : 2].color;
-    drawMapNode(p.x + dx, p.y, i, locked, cleared, frontier, accent, now);
+    const reg = regionOf(i), gated = reg >= 1 && !regionOpen[reg];
+    const locked = i > unlocked || gated, cleared = levelCleared(i), frontier = i === unlocked && !cleared;
+    const accent = MAP_REGIONS[reg].color;
+    drawMapNode(p.x + dx, p.y, i, locked, cleared, frontier, accent, now, gated);
   });
   // 顶栏：返回 / 标题 / 形象·成就·设置（排行榜已下线，改走各平台平台榜）
   mapBtns = [];
@@ -2988,6 +3152,7 @@ function drawMap(){
     ctx.fillText(mapHint.text, W / 2, 516);
   } else mapHint = null;
   if (mapCard !== null) drawMapCard(mapCard);
+  if (gateCard !== null) drawGateCard();
   if (mapPanel === "board") drawBoard();
   if (mapPanel === "ach") drawAchPanel();
   if (mapPanel === "skins") drawSkinsPanel();
@@ -3078,6 +3243,55 @@ function drawMapCard(i){
     });
   }
 }
+/* 区域广告门解锁：看完广告 → 整区永久解锁落存档；用户取消 → 保持锁定、卡不关；
+   广告失败（加载失败/无填充，非取消）→ 卡上露出免费兜底入口，绝不把人锁死在门外。 */
+async function tryUnlockRegion(region){
+  const res = await unlockViaAdDetailed();
+  if (res === "ok"){
+    regionOpen[region] = true; saveRegions();
+    gateCard = null; gateFailFree = false;
+    sfx("goal");
+  } else if (res === "fail"){
+    gateFailFree = true;   // 卡保持打开，drawGateCard 据此多画一行兜底按钮
+  }
+  // cancel：什么都不变
+}
+function freeUnlockRegion(region){
+  regionOpen[region] = true; saveRegions();
+  gateCard = null; gateFailFree = false;
+  sfx("goal");
+}
+/* 区域广告门解锁卡（与选关卡同底板）：区名＋说明＋金色「看广告解锁」＋（失败后）免费兜底行 */
+function drawGateCard(){
+  const region = gateCard;
+  gateBtns = [];
+  const X = 100, Y = 288, Wd = 760, Hd = 240;
+  ctx.fillStyle = "rgba(8,10,24,0.96)"; rr(X, Y, Wd, Hd, 16); ctx.fill();
+  ctx.strokeStyle = "rgba(255,209,102,0.45)"; ctx.lineWidth = 1.5; rr(X, Y, Wd, Hd, 16); ctx.stroke();
+  // 关闭 ×
+  ctx.fillStyle = "rgba(255,255,255,0.10)"; rr(816, 296, 34, 34, 9); ctx.fill();
+  ctx.fillStyle = "#dfe3ee"; ctx.font = "bold 17px system-ui"; ctx.textAlign = "center";
+  ctx.fillText("×", 833, 320);
+  gateBtns.push({ x: 816, y: 296, w: 34, h: 34, kind: "close" });
+  // 标题与说明
+  ctx.fillStyle = MAP_REGIONS[region].color; ctx.font = "bold 26px system-ui";
+  ctx.fillText(MAP_REGIONS[region].name + "区尚未解锁", 480, 352);
+  ctx.fillStyle = "#aeb6cc"; ctx.font = "15px system-ui";
+  ctx.fillText("看一段广告即可永久解锁本区，之后随便进出", 480, 384);
+  // 金色主按钮：看广告解锁
+  ctx.fillStyle = "#ffd166"; rr(330, 404, 300, 48, 12); ctx.fill();
+  ctx.fillStyle = "#14142b"; ctx.font = "bold 18px system-ui";
+  ctx.fillText("看广告解锁", 480, 435);
+  gateBtns.push({ x: 330, y: 404, w: 300, h: 48, kind: "unlock" });
+  // 免费兜底（仅广告失败后出现）
+  if (gateFailFree){
+    ctx.fillStyle = "rgba(255,255,255,0.10)"; rr(330, 462, 300, 40, 10); ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.25)"; ctx.lineWidth = 1; rr(330, 462, 300, 40, 10); ctx.stroke();
+    ctx.fillStyle = "#dfe3ee"; ctx.font = "15px system-ui";
+    ctx.fillText("广告暂不可用，本次免费解锁", 480, 488);
+    gateBtns.push({ x: 330, y: 462, w: 300, h: 40, kind: "free" });
+  }
+}
 function cycleOutfit(slot){
   const owned = OUTFIT_DEFS.filter(d => d.slot === slot && skins.unlockedOutfits.includes(d.id)).map(d => d.id);
   if (!owned.length) return false;
@@ -3127,6 +3341,17 @@ function handleMapClick(x, y){
     mapPanel = null;
     return;
   }
+  if (gateCard !== null){
+    for (const b of gateBtns){
+      if (x < b.x || x > b.x + b.w || y < b.y || y > b.y + b.h) continue;
+      if (b.kind === "close") gateCard = null;
+      else if (b.kind === "unlock") tryUnlockRegion(gateCard);
+      else if (b.kind === "free") freeUnlockRegion(gateCard);
+      return;
+    }
+    gateCard = null;   // 点卡外关闭（与选关卡同口径）
+    return;
+  }
   if (mapCard !== null){
     for (const b of cardBtns){
       if (x < b.x || x > b.x + b.w || y < b.y || y > b.y + b.h) continue;
@@ -3159,8 +3384,13 @@ function handleMapClick(x, y){
   for (let i = 0; i < MAP_NODES.length; i++){
     const p = MAP_NODES[i];
     if (Math.hypot(x - p.x, y - p.y) <= 24){
-      if (i <= unlocked){ mapCard = i; sfx("goal"); }
-      else { mapShake = { i, t0: performance.now() }; mapHint = { text: "先通关上一关", t0: performance.now() }; }
+      const gate = regionGateFor(i);
+      if (i <= unlocked && gate){ gateCard = gate; gateFailFree = false; mapCard = null; sfx("goal"); }
+      else if (i <= unlocked){ mapCard = i; sfx("goal"); }
+      else {
+        mapShake = { i, t0: performance.now() };
+        mapHint = { text: regionOf(i) > regionOf(unlocked) ? "先通关上一区" : "先通关上一关", t0: performance.now() };
+      }
       return;
     }
   }
@@ -3201,6 +3431,12 @@ window.__game = {
   get sprite(){ return { ready: naiwaReady, frame: naiwaFrame }; },
   get trap(){ return { rows: trapRows.map(r => ({ x: r.x, p: Math.round(trapProgress(r) * 100) / 100 })), scorch: trapScorch.length, hint: trapHintArmed }; },
   get revives(){ return revivesUsed; },
+  get shield(){ return shield; },
+  get shieldChip(){ return shieldChipVisible(); },
+  get regions(){ return regionOpen.slice(); },
+  get gateCard(){ return gateCard; },
+  get gateFree(){ return gateFailFree; },
+  ads: { failNext: () => { adFailNext = true; } },
   get checkpoint(){ return checkpoint ? { x: checkpoint.x, y: checkpoint.y, ring: checkpoint.ring } : null; },
   get invuln(){ return invulnT; },
   get deadBtns(){ return deadBtns.map(b => ({ action: b.action, disabled: !!b.disabled })); },
