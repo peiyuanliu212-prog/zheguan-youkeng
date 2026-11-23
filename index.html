@@ -1246,13 +1246,25 @@ function tutAdvance(){
 /* ---------------- state ---------------- */
 const cv = document.getElementById("cv");
 const ctx = cv.getContext("2d");
-let screen = "title";           // title | play | clear | win | dying（死亡定格）| dead（死亡面板自选）
+let screen = "boot";            // boot（加载页）| title | map（闯关地图）| play | clear | win | dying（死亡定格）| dead（死亡面板自选）
 let ring = 0;                   // world state, ONLY changed by shift()
 let levelIdx = 0;
 let deaths = 0;
 let runTime = 0, clearTimer = 0;
 let camX = 0, shake = 0, flash = 0;
 let particles = [];
+
+/* ---- 加载进度（加载页驱动源）：全部图片资源逐张记 settled，失败也算 settled
+   （走各自的顶替/dead/回退口径），加载页进度 = done/total，永不卡死。 ---- */
+const LOAD = { total: 0, done: 0 };
+const bootT0 = performance.now();
+function loadCounted(im, onOk){
+  LOAD.total++;
+  let counted = false;
+  const fin = (ok) => { if (!counted){ counted = true; LOAD.done++; if (ok && onOk) onOk(); } };
+  im.onload = () => fin(true);
+  im.onerror = () => fin(false);
+}
 
 /* ---- 四状态背景图＋移位转换特效（纯视觉：不碰物理、时序、判定） ----
    背景图 cover 预渲染成离屏瓦片（正＋镜像各一），横向镜像平铺、0.2 倍速视差。
@@ -1263,7 +1275,7 @@ const BG_TW = Math.round(768 * BG_TH / 512);      // 等比 cover 宽 = 810
 const bgTiles = [null, null, null, null];
 BG_FILES.forEach((src, i) => {
   const im = new Image();
-  im.onload = () => {
+  loadCounted(im, () => {
     const mk = (flip) => {
       const c = document.createElement("canvas"); c.width = BG_TW; c.height = BG_TH;
       const g = c.getContext("2d");
@@ -1272,7 +1284,7 @@ BG_FILES.forEach((src, i) => {
       return c;
     };
     bgTiles[i] = { n: mk(false), f: mk(true) };
-  };
+  });
   im.src = src;
 });
 let bgFrom = 0, bgTo = 0, bgT0 = 0;               // 交叉淡入 from→to（0.35s）
@@ -1404,6 +1416,7 @@ let skinBtns = [];              // 形象页命中区（drawSkinsPanel 每帧重
    全部 settled 后，最终失败的帧用相邻可用帧顶替该索引——保证每个索引永远有图可画；
    整套全军覆没才标 dead（调用方回退小点/跳过该套），不再出现「一帧挂掉整套回退」。 */
 function loadFramesRobust(count, srcFor, onAllSettled){
+  LOAD.total += count;              // 加载页进度：本套帧计入总数，逐帧 settled 计入完成
   const frames = [];
   const settled = new Array(count).fill(false);
   let settledCount = 0;
@@ -1427,7 +1440,7 @@ function loadFramesRobust(count, srcFor, onAllSettled){
     const im = new Image();
     const src = srcFor(i);
     let retried = false;
-    const settle = () => { if (!settled[i]){ settled[i] = true; if (++settledCount === count) finish(); } };
+    const settle = () => { if (!settled[i]){ settled[i] = true; LOAD.done++; if (++settledCount === count) finish(); } };
     im.onload = settle;
     im.onerror = () => { if (!retried){ retried = true; im.src = src; } else settle(); };
     im.src = src;
@@ -1729,6 +1742,11 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "KeyR" && screen === "play") { deaths++; respawn(); }
   if (e.code === "KeyM") { audio(); settings.music = !Music.toggle(); saveSettings(); }
   if (e.code === "Escape" && screen === "title") titlePanel = null;
+  if (e.code === "Escape" && screen === "map"){
+    if (mapPanel) mapPanel = null;
+    else if (mapCard !== null) mapCard = null;
+    else screen = "title";
+  }
   if (screen === "title" && /^Digit\d$/.test(e.code)) { const i = e.code === "Digit0" ? 9 : +e.code.slice(5) - 1; if (i < LEVELS.length && i <= unlocked) startLevel(i); }
 });
 let padL = null, padR = null; // touch/mouse pads drawn on canvas, hit-tested below
@@ -1736,32 +1754,22 @@ cv.addEventListener("pointerdown", (e) => {
   const r = cv.getBoundingClientRect();
   const x = (e.clientX - r.left) * (CONFIG.viewW / r.width);
   const y = (e.clientY - r.top)  * (CONFIG.viewH / r.height);
+  if (screen === "boot") return;
+  if (screen === "map"){ handleMapClick(x, y); return; }
   if (screen === "title"){
-    if (titlePanel === "skins") { handleSkinClick(x, y); return; }
-    if (titlePanel) { titlePanel = null; return; }
     for (const b of uiBtns){
       if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h){
         if (b.id === "play") startLevel(unlocked);
-        else if (b.id === "music") { audio(); settings.music = !Music.toggle(); saveSettings(); }
-        else if (b.id === "sfx") { sfxOn = !sfxOn; settings.sfx = sfxOn; saveSettings(); if (sfxOn) sfx("goal"); }
-        else if (b.id === "skins") titlePanel = "skins";
-        else if (b.id === "board") titlePanel = "board";
-        else if (b.id === "ach") titlePanel = "ach";
-        return;
-      }
-    }
-    for (const b of titleBtns){
-      if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h){
-        if (b.i <= unlocked) startLevel(b.i);
+        else if (b.id === "map") { audio(); mapPanel = null; mapCard = null; screen = "map"; }
         return;
       }
     }
   }
   if ((screen === "clear" || screen === "win") && skinHintBtn &&
       x >= skinHintBtn.x && x <= skinHintBtn.x + skinHintBtn.w && y >= skinHintBtn.y && y <= skinHintBtn.y + skinHintBtn.h){
-    // 从结算页跳形象页：先把本关解锁落账，别让跳页吞掉进度
+    // 从结算页跳形象页（现挂在地图页顶栏）：先把本关解锁落账，别让跳页吞掉进度
     if (screen === "clear" && levelIdx + 1 > unlocked) { unlocked = Math.min(levelIdx + 1, LEVELS.length - 1); saveUnlock(); }
-    screen = "title"; titlePanel = "skins";
+    screen = "map"; mapPanel = "skins"; mapCard = null;
     return;
   }
   if (screen === "clear" || screen === "win"){
@@ -1951,7 +1959,7 @@ const NAIWA_FRAMES = loadFramesRobust(15,
 // 悬浮滑翔图（主人艺源通道生成，frames/hover.png，931×782 已去底）：滞空超过约 0.23s 后接管腾空姿势；原图面朝左，故绘制时朝向取反
 const NAIWA_HOVER = new Image();
 let naiwaHoverReady = false;
-NAIWA_HOVER.onload = () => { naiwaHoverReady = true; };
+loadCounted(NAIWA_HOVER, () => { naiwaHoverReady = true; });
 NAIWA_HOVER.src = "frames/hover.png";
 /* 穿搭合成栈：底图取优先级 手持＞衣服＞帽子 的整表帧，其余已穿件叠覆盖层，
    顺序 底图→衣服层→帽子层→手持层。无穿戴返回 null（走 base 原路径，逐像素不变）。
@@ -2052,6 +2060,8 @@ function drawPlayerSkin(cx, feetY, o){
   else drawDot(cx, feetY, o);
 }
 function draw(){
+  if (screen === "boot"){ drawBoot(); return; }
+  if (screen === "map"){ drawMap(); return; }
   const st = curState(), W = CONFIG.viewW, H = CONFIG.viewH;
   ctx.fillStyle = st.sky; ctx.fillRect(0, 0, W, H);
   const imgBg = screen !== "title" && drawStateBg();   // 状态背景图（标题页维持原样）
@@ -2370,43 +2380,14 @@ function drawTitle(){
   const cleared = records.lv.filter(r => r && r.t !== null && r.t !== undefined).length;
   ctx.fillStyle = "#aeb6cc"; ctx.font = "14px system-ui";
   ctx.fillText("已通关 " + cleared + "/" + LEVELS.length + " · 累计死亡 " + deaths, W / 2, 280);
-  // 选关按钮，三行 × 10，紧凑对齐（命中区与 pointerdown 共用 titleBtns）
+  // 选关整体搬去地图页：标题只留一个「闯关地图」入口（网格/音乐/音效/形象/排行榜/成就均已撤下）
   titleBtns = [];
-  const bw = 76, bh = 38, gap = 10, per = 10;
-  const rowW = bw * per + gap * (per - 1), bx0 = (W - rowW) / 2;
-  for (let i = 0; i < LEVELS.length; i++){
-    const bx = bx0 + (i % per) * (bw + gap), by = 296 + Math.floor(i / per) * 46;
-    titleBtns.push({ x: bx, y: by, w: bw, h: bh, i });
-    const open = i <= unlocked;
-    ctx.fillStyle = open ? "#ffd166" : "rgba(255,255,255,0.10)";
-    rr(bx, by, bw, bh, 9); ctx.fill();
-    ctx.fillStyle = open ? "#14142b" : "#8d99ae"; ctx.font = "bold 17px system-ui";
-    ctx.fillText(open ? String(i + 1) : "🔒", bx + bw / 2, by + 26);
-  }
-  // 底部一行：音乐/音效开关与形象/排行榜/成就入口（几何沿旧版，uiBtns 与 pointerdown 共用）
-  const items = [
-    { id: "music", label: "音乐 " + (settings.music ? "开" : "关"), x: 120 },
-    { id: "sfx",   label: "音效 " + (sfxOn ? "开" : "关"),          x: 300 },
-    { id: "skins", label: "形象",                                   x: 480 },
-    { id: "board", label: "排行榜",                                 x: 660 },
-    { id: "ach",   label: "成就",                                   x: 840 }
-  ];
-  ctx.font = "15px system-ui";
-  for (const it of items){
-    uiBtns.push({ x: it.x - 70, y: 484, w: 140, h: 38, id: it.id });
-    ctx.fillStyle = "#8d99ae";
-    ctx.fillText(it.label, it.x, 508);
-    // 形象入口提示点：还有未解锁的形象/穿搭时亮起
-    if (it.id === "skins" && (!skins.unlocked.includes("frog") || skins.unlockedOutfits.length < OUTFIT_DEFS.length)){
-      const tw = ctx.measureText(it.label).width;
-      ctx.fillStyle = "#ffd166";
-      ctx.beginPath(); ctx.arc(it.x + tw / 2 + 11, 494, 4.5, 0, Math.PI * 2); ctx.fill();
-    }
-  }
+  ctx.fillStyle = "rgba(255,255,255,0.10)"; rr(315, 300, 330, 50, 14); ctx.fill();
+  ctx.strokeStyle = "rgba(255,209,102,0.65)"; ctx.lineWidth = 1.5; rr(315, 300, 330, 50, 14); ctx.stroke();
+  ctx.fillStyle = "#ffd166"; ctx.font = "bold 19px system-ui";
+  ctx.fillText("闯关地图", W / 2, 333);
+  uiBtns.push({ x: 315, y: 300, w: 330, h: 50, id: "map" });
   navBtns = [];
-  if (titlePanel === "board") drawBoard();
-  if (titlePanel === "ach") drawAchPanel();
-  if (titlePanel === "skins") drawSkinsPanel();
 }
 function fmtT(v){ return v === null || v === undefined ? "—" : v.toFixed(1) + "s"; }
 function panelBox(){
@@ -2612,7 +2593,7 @@ function drawSkinsPanel(){
 function handleSkinClick(x, y){
   for (const b of skinBtns){
     if (x < b.x || x > b.x + b.w || y < b.y || y > b.y + b.h) continue;
-    if (b.action === "back") titlePanel = null;
+    if (b.action === "back"){ titlePanel = null; mapPanel = null; }
     else if (b.action === "select"){ skins.current = b.id; saveSkins(); }
     else if (b.action === "unlock") tryUnlockSkin(b.id);
     else if (b.action === "outfit"){
@@ -2628,12 +2609,13 @@ function handleSkinClick(x, y){
 /* ---------------- 过关结算 / 全通关页：按钮点选（不自动跳转） ----------------
    navBtns 由 drawClearOverlay / drawWin 每帧重建，pointerdown 共用命中。
    下一关/重玩走 loadLevel（本轮计时/死亡/移位累计不重置，与旧自动流程同口径）；
-   选关与主页都回标题页（选关区就在标题页上）。 */
+   选关去地图页、主页回标题页。 */
 let navBtns = [];
 function handleNav(action){
   audio();
   if (action === "next"){ loadLevel(levelIdx + 1); screen = "play"; Music.start(); }
   else if (action === "replay"){ loadLevel(levelIdx); screen = "play"; Music.start(); }
+  else if (action === "select"){ screen = "map"; titlePanel = null; mapPanel = null; mapCard = null; }
   else { screen = "title"; titlePanel = null; }
 }
 function drawNavBtns(defs, by, bw, bh, gap){
@@ -2785,11 +2767,347 @@ function drawDeathPanel(){
   }
 }
 
+/* ---------------- 加载页 ----------------
+   启动先进 boot：进度由 LOAD 真实计数驱动（奶蛙帧/悬浮/背景/地图/穿搭全算），
+   全部 settled 才满格；frame() 里满格且满 0.8s 自动进标题。形象动画与标题预览
+   同口径：精灵就绪画蛙、未就绪画小点（健壮加载的顶替/dead 口径不变）。 */
+function drawBoot(){
+  const W = CONFIG.viewW, H = CONFIG.viewH;
+  ctx.fillStyle = "#05060f"; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ffd166"; ctx.font = "bold 56px system-ui";
+  ctx.fillText("这关有坑", W / 2, 160);
+  const now = performance.now(), baseY = 262;
+  ctx.strokeStyle = "rgba(255,255,255,0.14)"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(330, baseY); ctx.lineTo(630, baseY); ctx.stroke();
+  if (skins.current === "frog" && naiwaReady && !naiwaDead){
+    drawFrogStackAt(480, baseY, 84, NAIWA_LOOP[Math.floor(now / 95) % NAIWA_LOOP.length]);
+  } else {
+    const b = Math.abs(Math.sin(now / 300)) * 9, S2 = 50;
+    ctx.fillStyle = curState().player;
+    rr(480 - S2 / 2, baseY - S2 - b, S2, S2, 12); ctx.fill();
+    ctx.fillStyle = "#14142b";
+    ctx.beginPath(); ctx.arc(480 + 8, baseY - S2 - b + 18, 5.5, 0, Math.PI * 2); ctx.fill();
+  }
+  const pct = LOAD.total ? LOAD.done / LOAD.total : 0;
+  ctx.fillStyle = "rgba(255,255,255,0.12)"; rr(280, 306, 400, 14, 7); ctx.fill();
+  ctx.fillStyle = "#ffd166";
+  if (pct > 0){ rr(280, 306, Math.max(14, 400 * pct), 14, 7); ctx.fill(); }
+  ctx.fillStyle = "#aeb6cc"; ctx.font = "15px system-ui";
+  ctx.fillText(pct >= 1 ? "加载完成" : "加载中 " + Math.floor(pct * 100) + "%", W / 2, 348);
+}
+
+/* ---------------- 闯关地图页 ----------------
+   地图图 1536×1024 按宽 960 缩放（高 640）上下居中裁切，保住中部路径带。
+   节点沿画中沙土路的手调折线按弧长均匀取 32 点；区域按索引分三区，
+   与图面三景对应：0–9 入门（黎明草甸）/ 10–19 进阶（黄昏雪山）/ 20–31 高手（虚空荒原）。 */
+const mapImg = new Image();
+let mapImgReady = false;
+loadCounted(mapImg, () => { mapImgReady = true; });
+mapImg.src = "map/world-map.png";
+const MAP_PATH = [
+  [24, 382], [80, 380], [140, 372], [200, 362], [240, 358], [285, 356], [330, 350], [375, 342], [406, 336],
+  [448, 318], [475, 303], [500, 285], [522, 269], [540, 248], [553, 231],
+  [575, 240], [600, 250], [626, 264], [653, 281],
+  [680, 302], [706, 325], [745, 340], [788, 349],
+  [830, 344], [875, 328], [915, 312], [936, 296]
+];
+const MAP_NODES = (() => {
+  const segs = [];
+  let total = 0;
+  for (let i = 0; i < MAP_PATH.length - 1; i++){
+    const dx = MAP_PATH[i + 1][0] - MAP_PATH[i][0], dy = MAP_PATH[i + 1][1] - MAP_PATH[i][1];
+    const len = Math.hypot(dx, dy);
+    segs.push({ x: MAP_PATH[i][0], y: MAP_PATH[i][1], dx, dy, len, acc: total });
+    total += len;
+  }
+  const pts = [];
+  for (let i = 0; i < LEVELS.length; i++){
+    const d = total * i / (LEVELS.length - 1);
+    let s = segs[segs.length - 1];
+    for (const sg of segs) if (d <= sg.acc + sg.len){ s = sg; break; }
+    const k = s.len ? (d - s.acc) / s.len : 0;
+    pts.push({ x: s.x + s.dx * k, y: s.y + s.dy * k });
+  }
+  return pts;
+})();
+const MAP_REGIONS = [
+  { name: "入门", color: "#ffd166", cx: 160 },
+  { name: "进阶", color: "#b197fc", cx: 480 },
+  { name: "高手", color: "#66d9e8", cx: 800 }
+];
+let mapPanel = null;            // null | "board" | "ach" | "skins" | "settings"（地图页上的浮层）
+let mapCard = null;             // 选关弹窗的关卡索引（null＝未打开）
+let mapBtns = [], cardBtns = [], settingsBtns = [];
+let mapShake = null;            // {i, t0} 点锁定节点的小震
+let mapHint = null;             // {text, t0} 地图页一行小字提示
+function levelCleared(i){
+  const r = records.lv[i];
+  return !!(r && r.t !== null && r.t !== undefined);
+}
+function drawMap(){
+  const W = CONFIG.viewW, H = CONFIG.viewH, now = performance.now();
+  if (mapImgReady) ctx.drawImage(mapImg, 0, -50, 960, 640);
+  else { ctx.fillStyle = "#0b0e1d"; ctx.fillRect(0, 0, W, H); }
+  // 区域牌（每区顶部一块，配色随区）
+  ctx.textAlign = "center";
+  for (const r of MAP_REGIONS){
+    ctx.fillStyle = "rgba(5,6,16,0.72)"; rr(r.cx - 46, 62, 92, 30, 9); ctx.fill();
+    ctx.strokeStyle = r.color; ctx.lineWidth = 1.5; rr(r.cx - 46, 62, 92, 30, 9); ctx.stroke();
+    ctx.fillStyle = r.color; ctx.font = "bold 15px system-ui";
+    ctx.fillText(r.name, r.cx, 83);
+  }
+  // 节点：状态每帧按存档现算（通关后回地图即时刷新）
+  MAP_NODES.forEach((p, i) => {
+    let dx = 0;
+    if (mapShake && mapShake.i === i){
+      const age = now - mapShake.t0;
+      if (age < 400) dx = Math.sin(age / 28) * 4 * (1 - age / 400);
+    }
+    const x = p.x + dx, y = p.y;
+    const locked = i > unlocked, cleared = levelCleared(i), frontier = i === unlocked && !cleared;
+    ctx.beginPath(); ctx.arc(x, y, 16, 0, Math.PI * 2);
+    ctx.fillStyle = locked ? "rgba(10,12,24,0.82)" : cleared ? "#ffd166" : frontier ? "#fff3bf" : "rgba(255,255,255,0.88)";
+    ctx.fill();
+    ctx.strokeStyle = locked ? "rgba(255,255,255,0.35)" : "rgba(20,20,43,0.55)"; ctx.lineWidth = 2; ctx.stroke();
+    if (frontier){
+      const pr = 20 + Math.sin(now / 210) * 3.5;
+      ctx.beginPath(); ctx.arc(x, y, pr, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(255,209,102," + (0.55 + 0.35 * Math.sin(now / 210)) + ")"; ctx.lineWidth = 2.5; ctx.stroke();
+    }
+    ctx.font = "bold 14px system-ui"; ctx.textAlign = "center";
+    if (locked){ ctx.font = "12px system-ui"; ctx.fillText("🔒", x, y + 4); }
+    else {
+      ctx.fillStyle = "#14142b";
+      ctx.fillText(String(i + 1), x, y + 5);
+      if (cleared){
+        ctx.fillStyle = "#51cf66"; ctx.font = "bold 13px system-ui";
+        ctx.fillText("✓", x + 13, y - 9);
+      }
+    }
+  });
+  // 顶栏：返回 / 标题 / 形象·排行榜·成就·设置
+  mapBtns = [];
+  ctx.fillStyle = "rgba(5,6,16,0.85)"; ctx.fillRect(0, 0, W, 52);
+  ctx.fillStyle = "rgba(255,255,255,0.10)"; rr(12, 8, 104, 36, 10); ctx.fill();
+  ctx.fillStyle = "#dfe3ee"; ctx.font = "bold 15px system-ui"; ctx.textAlign = "center";
+  ctx.fillText("← 返回", 64, 31);
+  mapBtns.push({ x: 12, y: 8, w: 104, h: 36, id: "back" });
+  ctx.fillStyle = "#fff"; ctx.font = "bold 19px system-ui";
+  ctx.fillText("闯关地图", W / 2, 33);
+  const topItems = [
+    { id: "skins", label: "形象", x: 652 },
+    { id: "board", label: "排行榜", x: 728 },
+    { id: "ach",   label: "成就", x: 804 },
+    { id: "settings", label: "设置", x: 880 }
+  ];
+  ctx.font = "14px system-ui";
+  for (const it of topItems){
+    ctx.fillStyle = mapPanel === it.id ? "rgba(255,209,102,0.25)" : "rgba(255,255,255,0.10)";
+    rr(it.x - 34, 8, 68, 36, 10); ctx.fill();
+    ctx.fillStyle = "#dfe3ee";
+    ctx.fillText(it.label, it.x, 31);
+    mapBtns.push({ x: it.x - 34, y: 8, w: 68, h: 36, id: it.id });
+    if (it.id === "skins" && (!skins.unlocked.includes("frog") || skins.unlockedOutfits.length < OUTFIT_DEFS.length)){
+      ctx.fillStyle = "#ffd166";
+      ctx.beginPath(); ctx.arc(it.x + 24, 15, 4, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  // 锁定提示小字（点未解锁节点时出现，1.6 秒）
+  if (mapHint && now - mapHint.t0 < 1600){
+    ctx.font = "14px system-ui";
+    const tw = ctx.measureText(mapHint.text).width + 32;
+    ctx.fillStyle = "rgba(8,10,24,0.9)"; rr((W - tw) / 2, 496, tw, 30, 9); ctx.fill();
+    ctx.strokeStyle = "rgba(255,209,102,0.6)"; ctx.lineWidth = 1; rr((W - tw) / 2, 496, tw, 30, 9); ctx.stroke();
+    ctx.fillStyle = "#ffd166"; ctx.textAlign = "center";
+    ctx.fillText(mapHint.text, W / 2, 516);
+  } else mapHint = null;
+  if (mapCard !== null) drawMapCard(mapCard);
+  if (mapPanel === "board") drawBoard();
+  if (mapPanel === "ach") drawAchPanel();
+  if (mapPanel === "skins") drawSkinsPanel();
+  if (mapPanel === "settings") drawSettingsPanel();
+}
+/* 选关弹窗：关卡名＋最佳纪录＋当前形象预览与紧凑换装区＋开始游戏 */
+function drawMapCard(i){
+  const now = performance.now();
+  cardBtns = [];
+  const X = 100, Y = 288, Wd = 760, Hd = 240;
+  ctx.fillStyle = "rgba(8,10,24,0.96)"; rr(X, Y, Wd, Hd, 16); ctx.fill();
+  ctx.strokeStyle = "rgba(255,209,102,0.45)"; ctx.lineWidth = 1.5; rr(X, Y, Wd, Hd, 16); ctx.stroke();
+  // 关闭 ×
+  ctx.fillStyle = "rgba(255,255,255,0.10)"; rr(816, 296, 34, 34, 9); ctx.fill();
+  ctx.fillStyle = "#dfe3ee"; ctx.font = "bold 17px system-ui"; ctx.textAlign = "center";
+  ctx.fillText("×", 833, 320);
+  cardBtns.push({ x: 816, y: 296, w: 34, h: 34, kind: "close" });
+  // 关卡名 + 最佳纪录（无纪录不显示这一行）
+  ctx.textAlign = "left"; ctx.fillStyle = "#fff"; ctx.font = "bold 21px system-ui";
+  ctx.fillText(LEVELS[i].name, 128, 328);
+  const rec = records.lv[i];
+  if (rec && rec.t !== null && rec.t !== undefined){
+    ctx.fillStyle = "#8d99ae"; ctx.font = "13px system-ui";
+    ctx.fillText("最佳纪录 · 用时 " + rec.t.toFixed(1) + "s · 移位 " + rec.s + " 次", 128, 352);
+  }
+  // 左列：当前形象动画预览（与标题同口径）
+  ctx.strokeStyle = "rgba(255,255,255,0.14)"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(140, 452); ctx.lineTo(300, 452); ctx.stroke();
+  if (skins.current === "frog" && naiwaReady && !naiwaDead){
+    drawFrogStackAt(220, 452, 62, NAIWA_LOOP[Math.floor(now / 95) % NAIWA_LOOP.length]);
+  } else {
+    const b = Math.abs(Math.sin(now / 300)) * 7, S2 = 40;
+    ctx.fillStyle = curState().player;
+    rr(220 - S2 / 2, 452 - S2 - b, S2, S2, 10); ctx.fill();
+    ctx.fillStyle = "#14142b";
+    ctx.beginPath(); ctx.arc(220 + 6, 452 - S2 - b + 14, 4.5, 0, Math.PI * 2); ctx.fill();
+  }
+  const curSkin = SKIN_DEFS.find(d => d.id === skins.current);
+  ctx.fillStyle = "#8d99ae"; ctx.font = "12px system-ui"; ctx.textAlign = "center";
+  ctx.fillText("当前形象：" + (curSkin ? curSkin.name : ""), 220, 474);
+  // 形象切换格（小点/奶蛙；奶蛙未解锁＝看视频解锁入口）
+  SKIN_DEFS.forEach((d, k) => {
+    const x = 336 + k * 162, y = 362, w = 150, h = 44;
+    const owned = skins.unlocked.includes(d.id), isCur = skins.current === d.id;
+    ctx.fillStyle = isCur ? "rgba(255,209,102,0.15)" : "rgba(255,255,255,0.05)";
+    rr(x, y, w, h, 10); ctx.fill();
+    ctx.strokeStyle = isCur ? "#ffd166" : "rgba(255,255,255,0.16)"; ctx.lineWidth = isCur ? 2 : 1;
+    rr(x, y, w, h, 10); ctx.stroke();
+    ctx.fillStyle = "#fff"; ctx.font = "bold 15px system-ui";
+    ctx.fillText(d.name, x + w / 2, y + 20);
+    ctx.font = "11px system-ui";
+    if (!owned){ ctx.fillStyle = "#ffd166"; ctx.fillText("🔒 看视频解锁", x + w / 2, y + 36); }
+    else if (isCur){ ctx.fillStyle = "#51cf66"; ctx.fillText("使用中", x + w / 2, y + 36); }
+    else { ctx.fillStyle = "#8d99ae"; ctx.fillText("点此换上", x + w / 2, y + 36); }
+    cardBtns.push({ x, y, w, h, kind: "skin", id: d.id });
+  });
+  // 开始游戏（金色主按钮）
+  ctx.fillStyle = "#ffd166"; rr(660, 362, 176, 44, 11); ctx.fill();
+  ctx.fillStyle = "#14142b"; ctx.font = "bold 17px system-ui";
+  ctx.fillText("开始游戏", 748, 390);
+  cardBtns.push({ x: 660, y: 362, w: 176, h: 44, kind: "start" });
+  // 穿搭紧凑区：三槽点选轮换已拥有件（无拥有件时点槽＝解锁该槽第一件未解锁）
+  const frogOn = skins.current === "frog", frogOwned = skins.unlocked.includes("frog");
+  ctx.textAlign = "left"; ctx.fillStyle = "#8d99ae"; ctx.font = "12px system-ui";
+  ctx.fillText(!frogOwned ? "穿搭 · 奶蛙专属（先解锁奶蛙）" : frogOn ? "穿搭 · 点槽位轮换" : "穿搭 · 换上奶蛙后可穿", 336, 430);
+  const SLOT_LABEL = { hat: "帽子", clothes: "衣服", hand: "手持" };
+  ["hat", "clothes", "hand"].forEach((slot, k) => {
+    const x = 336 + k * 162, y = 438, w = 150, h = 40;
+    const wornId = skins.outfits[slot], worn = wornId ? outfitDef(wornId) : null;
+    ctx.fillStyle = worn ? "rgba(255,209,102,0.13)" : "rgba(255,255,255,0.05)";
+    rr(x, y, w, h, 9); ctx.fill();
+    ctx.strokeStyle = worn ? "#ffd166" : "rgba(255,255,255,0.14)"; ctx.lineWidth = worn ? 2 : 1;
+    rr(x, y, w, h, 9); ctx.stroke();
+    ctx.fillStyle = "#fff"; ctx.font = "13px system-ui"; ctx.textAlign = "center";
+    ctx.fillText(SLOT_LABEL[slot] + "：" + (worn ? worn.name : "无"), x + w / 2, y + 25);
+    if (!frogOn){ ctx.fillStyle = "rgba(5,6,16,0.5)"; rr(x, y, w, h, 9); ctx.fill(); }
+    else cardBtns.push({ x, y, w, h, kind: "slot", slot });
+  });
+  // 未解锁穿搭的看视频解锁入口（每槽一行小字按钮，指向该槽第一件未解锁）
+  if (frogOwned){
+    ["hat", "clothes", "hand"].forEach((slot, k) => {
+      const next = OUTFIT_DEFS.find(d => d.slot === slot && !skins.unlockedOutfits.includes(d.id));
+      if (!next) return;
+      const x = 336 + k * 162, y = 484;
+      ctx.fillStyle = "#ffd166"; ctx.font = "12px system-ui"; ctx.textAlign = "center";
+      ctx.fillText("＋ 解锁" + next.name, x + 75, y + 15);
+      cardBtns.push({ x, y, w: 150, h: 22, kind: "unlockOutfit", id: next.id });
+    });
+  }
+}
+function cycleOutfit(slot){
+  const owned = OUTFIT_DEFS.filter(d => d.slot === slot && skins.unlockedOutfits.includes(d.id)).map(d => d.id);
+  if (!owned.length) return false;
+  const seq = [null, ...owned];
+  skins.outfits[slot] = seq[(seq.indexOf(skins.outfits[slot]) + 1) % seq.length];
+  saveSkins();
+  if (skins.outfits[slot]) sfx("goal");
+  return true;
+}
+/* 设置面板（与标题旧入口同一 settings 存储：音乐/音效开关） */
+function drawSettingsPanel(){
+  settingsBtns = [];
+  ctx.fillStyle = "rgba(5,6,16,0.95)"; rr(270, 145, 420, 240, 14); ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = 1; rr(270, 145, 420, 240, 14); ctx.stroke();
+  ctx.textAlign = "center"; ctx.fillStyle = "#fff"; ctx.font = "bold 20px system-ui";
+  ctx.fillText("设置", 480, 184);
+  const rows = [
+    { id: "music", label: "音乐", on: settings.music, y: 222 },
+    { id: "sfx",   label: "音效", on: sfxOn,          y: 278 }
+  ];
+  for (const r of rows){
+    ctx.textAlign = "left"; ctx.fillStyle = "#dfe3ee"; ctx.font = "16px system-ui";
+    ctx.fillText(r.label, 310, r.y);
+    ctx.fillStyle = r.on ? "#ffd166" : "rgba(255,255,255,0.10)"; rr(516, r.y - 26, 104, 38, 10); ctx.fill();
+    ctx.fillStyle = r.on ? "#14142b" : "#8d99ae"; ctx.font = "bold 15px system-ui"; ctx.textAlign = "center";
+    ctx.fillText(r.on ? "开" : "关", 568, r.y - 1);
+    settingsBtns.push({ x: 516, y: r.y - 26, w: 104, h: 38, id: r.id });
+  }
+  ctx.fillStyle = "rgba(255,255,255,0.08)"; rr(390, 322, 180, 40, 10); ctx.fill();
+  ctx.fillStyle = "#dfe3ee"; ctx.font = "15px system-ui"; ctx.textAlign = "center";
+  ctx.fillText("关闭", 480, 348);
+  settingsBtns.push({ x: 390, y: 322, w: 180, h: 40, id: "close" });
+}
+function handleMapClick(x, y){
+  audio();
+  if (mapPanel === "skins"){ handleSkinClick(x, y); return; }
+  if (mapPanel === "board" || mapPanel === "ach"){ mapPanel = null; return; }
+  if (mapPanel === "settings"){
+    for (const b of settingsBtns){
+      if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h){
+        if (b.id === "music"){ settings.music = !Music.toggle(); saveSettings(); }
+        else if (b.id === "sfx"){ sfxOn = !sfxOn; settings.sfx = sfxOn; saveSettings(); if (sfxOn) sfx("goal"); }
+        else if (b.id === "close") mapPanel = null;
+        return;
+      }
+    }
+    mapPanel = null;
+    return;
+  }
+  if (mapCard !== null){
+    for (const b of cardBtns){
+      if (x < b.x || x > b.x + b.w || y < b.y || y > b.y + b.h) continue;
+      if (b.kind === "close") mapCard = null;
+      else if (b.kind === "start"){ const i = mapCard; mapCard = null; startLevel(i); }
+      else if (b.kind === "skin"){
+        if (skins.unlocked.includes(b.id)){ skins.current = b.id; saveSkins(); }
+        else tryUnlockSkin(b.id);
+      }
+      else if (b.kind === "slot"){
+        if (skins.current !== "frog") return;
+        if (!cycleOutfit(b.slot)){
+          const next = OUTFIT_DEFS.find(d => d.slot === b.slot && !skins.unlockedOutfits.includes(d.id));
+          if (next) tryUnlockOutfit(next.id);
+        }
+      }
+      else if (b.kind === "unlockOutfit") tryUnlockOutfit(b.id);
+      return;
+    }
+    mapCard = null;   // 点卡外关闭
+    return;
+  }
+  for (const b of mapBtns){
+    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h){
+      if (b.id === "back") screen = "title";
+      else mapPanel = b.id;
+      return;
+    }
+  }
+  for (let i = 0; i < MAP_NODES.length; i++){
+    const p = MAP_NODES[i];
+    if (Math.hypot(x - p.x, y - p.y) <= 24){
+      if (i <= unlocked){ mapCard = i; sfx("goal"); }
+      else { mapShake = { i, t0: performance.now() }; mapHint = { text: "先通关上一关", t0: performance.now() }; }
+      return;
+    }
+  }
+}
+
 /* ---------------- loop ---------------- */
 let last = performance.now();
 let frozen = false; // test-only freeze (set via __game.freeze)
 function frame(now){
   const dt = Math.min((now - last) / 1000, 0.033); last = now;
+  // 加载页：资源全 settled 且最短展示 0.8s → 自动进标题（只在还停在 boot 时）
+  if (screen === "boot" && LOAD.total > 0 && LOAD.done >= LOAD.total && now - bootT0 >= 800) screen = "title";
   if (!frozen){ if (screen === "dying") tickDeath(dt); else step(dt); }
   draw();
   requestAnimationFrame(frame);
@@ -2817,6 +3135,10 @@ window.__game = {
   get invuln(){ return invulnT; },
   get deadBtns(){ return deadBtns.map(b => ({ action: b.action, disabled: !!b.disabled })); },
   get evDir(){ return evWarn ? evWarn.dir : 0; },
+  get boot(){ return { done: LOAD.done, total: LOAD.total }; },
+  get mapCard(){ return mapCard; },
+  get mapPanel(){ return mapPanel; },
+  get mapNodes(){ return MAP_NODES.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) })); },
   get phases(){ return (level.phases || []).map(p => phaseOf(p)); },
   pressShift, loadLevel: (i) => { loadLevel(i); screen = "play"; },
   // test-only: place the player (auto-run has no stop input; used to exercise the trap kill branch)
