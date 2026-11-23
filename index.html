@@ -1400,18 +1400,48 @@ try {
 } catch(e) {}
 function saveSkins(){ try { localStorage.setItem("youkeng_skins_v1", JSON.stringify(skins)); } catch(e) {} }
 let skinBtns = [];              // 形象页命中区（drawSkinsPanel 每帧重建）
-/* 穿搭帧图加载：OUTFIT_SETS[id]＝整表 16 帧，OUTFIT_OVL[id]＝覆盖层 16 帧；ready 标记逐套置位 */
+/* 健壮帧加载：逐帧记 settled（onload/onerror 都算），失败先自动重试 1 次再判 settled；
+   全部 settled 后，最终失败的帧用相邻可用帧顶替该索引——保证每个索引永远有图可画；
+   整套全军覆没才标 dead（调用方回退小点/跳过该套），不再出现「一帧挂掉整套回退」。 */
+function loadFramesRobust(count, srcFor, onAllSettled){
+  const frames = [];
+  const settled = new Array(count).fill(false);
+  let settledCount = 0;
+  const finish = () => {
+    let anyGood = false;
+    for (let i = 0; i < count; i++) if (frames[i].complete && frames[i].naturalWidth){ anyGood = true; break; }
+    let dead = false;
+    if (!anyGood) dead = true;
+    else for (let i = 0; i < count; i++){
+      if (!(frames[i].complete && frames[i].naturalWidth)){
+        for (let d = 1; d < count; d++){
+          const a = frames[i - d], b = frames[i + d];
+          if (a && a.complete && a.naturalWidth){ frames[i] = a; break; }
+          if (b && b.complete && b.naturalWidth){ frames[i] = b; break; }
+        }
+      }
+    }
+    onAllSettled(dead);
+  };
+  for (let i = 0; i < count; i++){
+    const im = new Image();
+    const src = srcFor(i);
+    let retried = false;
+    const settle = () => { if (!settled[i]){ settled[i] = true; if (++settledCount === count) finish(); } };
+    im.onload = settle;
+    im.onerror = () => { if (!retried){ retried = true; im.src = src; } else settle(); };
+    im.src = src;
+    frames.push(im);
+  }
+  return frames;
+}
+/* 穿搭帧图加载：OUTFIT_SETS[id]＝整表 16 帧，OUTFIT_OVL[id]＝覆盖层 16 帧；ready/dead 逐套置位 */
 const OUTFIT_SETS = {}, OUTFIT_OVL = {};
 function loadFrameSet(dir){
-  const set = { frames: [], ready: false };
-  let done = 0;
-  for (let i = 0; i < 16; i++){
-    const im = new Image();
-    im.onload = () => { if (++done === 16) set.ready = true; };
-    im.onerror = () => { if (++done === 16) set.ready = true; };
-    im.src = dir + "/f" + String(i).padStart(2, "0") + ".png";
-    set.frames.push(im);
-  }
+  const set = { frames: [], ready: false, dead: false };
+  set.frames = loadFramesRobust(16,
+    i => dir + "/f" + String(i).padStart(2, "0") + ".png",
+    dead => { set.dead = dead; set.ready = true; });
   return set;
 }
 for (const d of OUTFIT_DEFS){
@@ -1907,85 +1937,17 @@ function rr(x, y, w, h, r){
   ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
   ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
 }
-/* ---------------- 奶蛙（canvas 程序绘制，对着原图 naiwa_front / naiwa_side 还原） ----------------
-   局部坐标：原点在脚底中心，+x 为朝向，身体在负 y 区，总高约 56px。
-   特征清单：奶黄梨形大身子（下宽上窄）／正面下半部一整块奶白大圆肚皮／头顶两侧
-   绿环眼＋黑大瞳（朝上略向外）／极细一条短横线嘴／灰褐手脚、四肢相对细长。
-   奔跑：双腿大幅前后迈开（±13px）、双臂反向摆、身子随步频起伏并轻微前倾；
-   gravUp 时整体上下翻转，贴天花板跑。 */
-function drawFrog(cx, feetY, o){
-  const YEL = "#f6c945", YEL_D = "#dfa92f", CREAM = "#fff7e9", BROWN = "#8a7a66", BROWN_D = "#77685a", GREEN = "#79c74f";
-  ctx.save();
-  ctx.globalAlpha = o.alpha === undefined ? 1 : o.alpha;
-  ctx.translate(cx, feetY);
-  if (o.gravUp) ctx.scale(1, -1);
-  ctx.scale(o.face * (1 + (1 - o.squash) * 0.35), o.squash);
-  const ph = o.phase || 0;
-  const s = Math.sin(ph);
-  const bob = o.airborne ? 0 : -Math.abs(s) * 1.6;
-  ctx.translate(0, bob);
-  if (!o.airborne) ctx.rotate(0.05);
-  const leg = (hx, fx, fy, col, w) => {
-    ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap = "round";
-    ctx.beginPath(); ctx.moveTo(hx, -11);
-    ctx.quadraticCurveTo(hx + (fx - hx) * 0.55, -4, fx, fy); ctx.stroke();
-    ctx.fillStyle = BROWN;
-    ctx.beginPath(); ctx.ellipse(fx + 2, -1.5, 5.2, 3.4, 0, 0, Math.PI * 2); ctx.fill();
-  };
-  // 远侧腿（略暗，与近侧反相迈步；脚要迈出身体轮廓外才读得出大步）
-  if (o.airborne) leg(-4, -15, -5, YEL_D, 7); else leg(-4, -5 - s * 24, s > 0 ? -4 : -1, YEL_D, 7);
-  // 身子：梨形，下宽上窄、通体圆润
-  ctx.fillStyle = YEL;
-  ctx.beginPath();
-  ctx.moveTo(-19, -4);
-  ctx.bezierCurveTo(-21, -22, -15, -38, -10, -47);
-  ctx.bezierCurveTo(-6, -53.5, 6, -53.5, 10, -47);
-  ctx.bezierCurveTo(15, -38, 20, -24, 19, -6);
-  ctx.bezierCurveTo(12, -0.5, -12, -0.5, -19, -4);
-  ctx.closePath(); ctx.fill();
-  // 肚皮：正面下半部一整块奶白大圆
-  ctx.fillStyle = CREAM;
-  ctx.beginPath(); ctx.ellipse(3.5, -21, 13.5, 15.5, -0.08, 0, Math.PI * 2); ctx.fill();
-  // 远侧手：灰褐色小手搭在肚皮左侧（原图里双手都扶在肚皮上）
-  ctx.fillStyle = BROWN_D;
-  ctx.beginPath(); ctx.arc(-8, -19, 3.8, 0, Math.PI * 2); ctx.fill();
-  // 近侧腿：迈开大步
-  if (o.airborne) leg(4, 16, -7, YEL, 7.5); else leg(4, 5 + s * 24, s > 0 ? -1 : -4, YEL, 7.5);
-  // 近侧臂：与近侧腿反向摆动，手是灰褐色
-  const hx2 = 7 - s * 9, hy2 = -18;
-  ctx.strokeStyle = YEL; ctx.lineWidth = 6; ctx.lineCap = "round";
-  ctx.beginPath(); ctx.moveTo(7, -34);
-  ctx.quadraticCurveTo(7 + (hx2 - 7) * 0.5, -26, hx2, hy2); ctx.stroke();
-  ctx.fillStyle = BROWN;
-  ctx.beginPath(); ctx.arc(hx2, hy2, 4.3, 0, Math.PI * 2); ctx.fill();
-  // 眼睛：头顶两侧，绿圆环＋黑色大瞳孔，朝上、略向外
-  const eye = (ex, ey2, r) => {
-    ctx.fillStyle = GREEN;
-    ctx.beginPath(); ctx.arc(ex, ey2, r, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#101010";
-    ctx.beginPath(); ctx.arc(ex + 0.9, ey2 - 0.9, r * 0.58, 0, Math.PI * 2); ctx.fill();
-  };
-  eye(-6.5, -48.5, 4.6); eye(8, -49.5, 4.3);
-  // 嘴：极细的一条短横线
-  ctx.strokeStyle = "rgba(96,74,40,0.9)"; ctx.lineWidth = 1.3; ctx.lineCap = "round";
-  ctx.beginPath(); ctx.moveTo(8.5, -40.5); ctx.lineTo(15, -41); ctx.stroke();
-  ctx.restore();
-}
 /* ---------------- 奶蛙精灵版（主人 2026-11-23 给的跑步精灵图切帧，frames/f00–f14） ----------------
    帧画布 248×270，内容底（脚底基线）在第 266 行；f00 站立，f01–f14 跑步循环，
-   f05/f06 为第二行腾空大步帧。加载完成前回退到上面的程序绘制版兜底。
+   f05/f06 为第二行腾空大步帧。精灵未就绪（加载中/整套失败）时一律回退小点，绝不画程序蛙。
    帧推进按奔跑距离（每 15px 一帧），不按时间——脚步与地面速度对齐，不打滑。 */
 const NAIWA_DH = 68;                 // 绘制高度（碰撞盒仍是原 30px，脚底对齐盒底边）
 const NAIWA_STRIDE = 13;             // 每帧推进的奔跑距离 px
 const NAIWA_LOOP = [2, 3, 4, 10, 11, 12, 13, 14];  // 地面跑循环：只留连续迈步帧；站立 f00、腾空 f05/f06、复位 f01/f07/f08/f09 不进地面循环（混入会一顿一顿）
-const NAIWA_FRAMES = [];
-let naiwaReady = false, naiwaFrame = 0, naiwaAir = 0;
-for (let i = 0; i < 15; i++){
-  const im = new Image();
-  im.onload = () => { if (NAIWA_FRAMES.every(f => f.complete && f.naturalWidth)) naiwaReady = true; };
-  im.src = "frames/f" + String(i).padStart(2, "0") + ".png";
-  NAIWA_FRAMES.push(im);
-}
+let naiwaReady = false, naiwaDead = false, naiwaFrame = 0, naiwaAir = 0;
+const NAIWA_FRAMES = loadFramesRobust(15,
+  i => "frames/f" + String(i).padStart(2, "0") + ".png",
+  dead => { naiwaDead = dead; naiwaReady = true; });
 // 悬浮滑翔图（主人艺源通道生成，frames/hover.png，931×782 已去底）：滞空超过约 0.23s 后接管腾空姿势；原图面朝左，故绘制时朝向取反
 const NAIWA_HOVER = new Image();
 let naiwaHoverReady = false;
@@ -1998,7 +1960,7 @@ function frogLayers(){
   let bottom = null;
   for (const slot of ["hand", "clothes", "hat"])
     if (skins.outfits[slot] && outfitDef(skins.outfits[slot])){ bottom = skins.outfits[slot]; break; }
-  if (!bottom || !OUTFIT_SETS[bottom].ready) return null;
+  if (!bottom || !OUTFIT_SETS[bottom].ready || OUTFIT_SETS[bottom].dead) return null;
   const layers = [{ set: OUTFIT_SETS[bottom], meta: OUTFIT_META[bottom] }];
   for (const slot of ["clothes", "hat", "hand"]){
     const id = skins.outfits[slot];
@@ -2007,9 +1969,9 @@ function frogLayers(){
   return layers;
 }
 function drawSetFrame(set, meta, idx, DH){
-  if (!set || !set.ready) return;
+  if (!set || !set.ready || set.dead) return;
   const img = set.frames[idx];
-  if (!img) return;
+  if (!img || !(img.complete && img.naturalWidth)) return;
   const k = DH / 270;   // 缩放恒按 270 基准：各套身体尺度与 base 一致，画布只是更高/更宽
   ctx.drawImage(img, -meta.ax * k, -meta.B * k, meta.W * k, meta.H * k);
 }
@@ -2026,7 +1988,7 @@ function drawFrogStackAt(cx, baseY, DH, idx){
   for (const L of layers) draw(L.set.frames, L.meta);
 }
 function drawFrogSprite(cx, feetY, o){
-  if (!naiwaReady){ drawFrog(cx, feetY, o); return; }
+  if (!naiwaReady || naiwaDead){ drawDot(cx, feetY, o); return; }
   if (o.frame === undefined) naiwaAir = o.airborne ? naiwaAir + 1 : 0;
   const layers = frogLayers();
   const useHover = o.frame === undefined && o.airborne && naiwaAir > 14 && (layers ? true : naiwaHoverReady);
@@ -2039,6 +2001,11 @@ function drawFrogSprite(cx, feetY, o){
     idx = dist < 2 ? 0 : NAIWA_LOOP[Math.floor(dist / NAIWA_STRIDE) % NAIWA_LOOP.length];
   }
   if (o.frame === undefined) naiwaFrame = useHover ? "hover" : idx;
+  // 兜底：无穿搭、非悬浮路径下本帧图不可用（理论上顶替后不会发生）→ 画小点，绝不画程序蛙
+  if (!layers && !useHover){
+    const img0 = NAIWA_FRAMES[idx];
+    if (!img0 || !(img0.complete && img0.naturalWidth)){ drawDot(cx, feetY, o); return; }
+  }
   ctx.save();
   ctx.globalAlpha = o.alpha === undefined ? 1 : o.alpha;
   ctx.translate(cx, feetY);
@@ -2380,9 +2347,8 @@ function drawTitle(){
   const baseY = 168;
   ctx.strokeStyle = "rgba(255,255,255,0.14)"; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(330, baseY); ctx.lineTo(630, baseY); ctx.stroke();
-  if (skins.current === "frog"){
-    if (naiwaReady) drawFrogStackAt(480, baseY, 84, NAIWA_LOOP[Math.floor(now / 95) % NAIWA_LOOP.length]);
-    else drawFrog(480, baseY, { face: 1, gravUp: false, phase: now / 16, airborne: false, squash: 1, alpha: 1 });
+  if (skins.current === "frog" && naiwaReady && !naiwaDead){
+    drawFrogStackAt(480, baseY, 84, NAIWA_LOOP[Math.floor(now / 95) % NAIWA_LOOP.length]);
   } else {
     const b = Math.abs(Math.sin(now / 300)) * 9, S2 = 50;
     ctx.fillStyle = curState().player;
@@ -2568,12 +2534,8 @@ function drawSkinsPanel(){
   const baseY = 190;
   ctx.strokeStyle = "rgba(255,255,255,0.14)"; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(300, baseY); ctx.lineTo(660, baseY); ctx.stroke();
-  if (skins.current === "frog"){
-    if (naiwaReady){
-      drawFrogStackAt(480, baseY, 92, NAIWA_LOOP[Math.floor(now / 95) % NAIWA_LOOP.length]);
-    } else {
-      drawFrog(480, baseY, { face: 1, gravUp: false, phase: now / 16, airborne: false, squash: 1, alpha: 1 });
-    }
+  if (skins.current === "frog" && naiwaReady && !naiwaDead){
+    drawFrogStackAt(480, baseY, 92, NAIWA_LOOP[Math.floor(now / 95) % NAIWA_LOOP.length]);
   } else {
     const b = Math.abs(Math.sin(now / 300)) * 10, S2 = 56;
     ctx.fillStyle = curState().player;
@@ -2594,7 +2556,7 @@ function drawSkinsPanel(){
     ctx.strokeStyle = isCur ? "#ffd166" : "rgba(255,255,255,0.16)"; ctx.lineWidth = isCur ? 2 : 1;
     rr(x, y, w, h, 12); ctx.stroke();
     if (d.id === "frog"){
-      if (naiwaReady){
+      if (naiwaReady && !naiwaDead){
         const img = NAIWA_FRAMES[3], DH = 38, DW = DH * (248 / 270);
         ctx.drawImage(img, x + 40 - DW / 2, y + 50 - DH * (266 / 270), DW, DH);
       }
