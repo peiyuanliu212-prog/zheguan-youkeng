@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>这关有坑 · A段操作原型</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { background:#20242e; height:100%; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; }
+  #stage { position:relative; width:min(100vw,177.78vh); margin:0 auto; }
+  canvas { display:block; width:100%; height:auto; background:#fdf6d8; touch-action:none; }
+  #hud { color:#f5f0dc; text-align:center; padding:8px 4px 2px; font-size:15px; }
+  #hud b { color:#ffd83d; }
+  .tbtn {
+    position:absolute; bottom:3.5%; width:15%; aspect-ratio:1/1; border-radius:50%;
+    background:rgba(32,36,46,.38); border:2px solid rgba(255,255,255,.55);
+    color:#fff; font-size:26px; display:flex; align-items:center; justify-content:center;
+    user-select:none; -webkit-user-select:none; touch-action:none;
+  }
+  .tbtn.on { background:rgba(255,216,61,.55); }
+  #btnL { left:4%; } #btnR { left:22%; }
+  #btnJ { right:4%; width:17%; font-size:20px; }
+</style>
+</head>
+<body>
+<div id="hud">死亡次数：<b id="deaths">0</b>　<span id="tip">←/→ 移动 · 空格跳跃（触屏按钮可同时按）</span></div>
+<div id="stage">
+  <canvas id="cv" width="960" height="540"></canvas>
+  <div class="tbtn" id="btnL">◀</div>
+  <div class="tbtn" id="btnR">▶</div>
+  <div class="tbtn" id="btnJ">跳</div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   《这关有坑》A 段核心操作原型
+   只验操作手感：横移/跳跃物理、土狼、缓冲、可变跳高、死亡重开、确定性。
+   固定步长模拟 240Hz；土狼/缓冲/定格全部用整数步计数，杜绝浮点漂移。
+   ============================================================ */
+const STEP = 1 / 240;
+const CFG = {
+  W: 960, H: 540,
+  pw: 36, ph: 44,               // 玩家碰撞盒
+  speed: 260,                    // 横移 px/s
+  gUp: 2400,                     // 上升重力 px/s^2
+  gDown: 3240,                   // 下落重力 = 上升 ×1.35
+  jumpVel: 850,                  // 起跳速度 px/s
+  cutMul: 0.45,                  // 松开跳跃键截断系数
+  maxFall: 900,
+  coyoteSteps: 24,               // 0.10s
+  bufferSteps: 31,               // 名义≈0.129s；实测有效提前量≈0.117s（0.12±0.01）
+  freezeSteps: 84,               // 0.35s 死亡定格
+  killY: 640
+};
+
+/* 单屏测试场：几段平台 + 尖刺 + 终点旗（数据驱动，格式沿用四相） */
+const LEVEL = {
+  spawn: { x: 80, y: 426 },
+  solids: [
+    { x: 0,   y: 470, w: 400, h: 70 },    // 地面 A（出生）
+    { x: 560, y: 470, w: 400, h: 70 },    // 地面 B（旗与刺）
+    { x: 400, y: 532, w: 160, h: 8 },     // 坑底
+    { x: 60,  y: 340, w: 220, h: 18 },    // 土狼测试台（右缘 x=280）
+    { x: 400, y: 385, w: 110, h: 16 }     // 坑上小台
+  ],
+  spikes: [
+    { x: 420, y: 532, n: 6 },             // 坑底刺
+    { x: 650, y: 470, n: 3 }              // 地面 B 刺带
+  ],
+  flag: { x: 892, y: 470 }
+};
+const TOOTH_W = 20, TOOTH_H = 18;
+function spikeBox(s) { return { x: s.x + 5, y: s.y - TOOTH_H + 4, w: s.n * TOOTH_W - 10, h: TOOTH_H - 4 }; }
+
+/* ---------------- 状态（单一事实源） ---------------- */
+let frame = 0;                    // 已模拟步数；模拟时钟 time = frame*STEP
+let deaths = 0;
+let won = false;
+let deathFrame = -1, respawnFrame = -1;
+const P = {
+  x: LEVEL.spawn.x, y: LEVEL.spawn.y, vx: 0, vy: 0,
+  grounded: true, face: 1,
+  coyote: 0, buffer: 0, cutDone: true,
+  dead: false, freeze: 0
+};
+const keys = { left: false, right: false, jump: false };
+let prevJump = false;
+
+/* ---------------- 输入 ---------------- */
+function setKey(k, v) { keys[k] = !!v; }
+const KEYMAP = { ArrowLeft: "left", KeyA: "left", ArrowRight: "right", KeyD: "right",
+                 Space: "jump", ArrowUp: "jump", KeyW: "jump" };
+addEventListener("keydown", e => { const k = KEYMAP[e.code]; if (k) { setKey(k, true); e.preventDefault(); } });
+addEventListener("keyup",   e => { const k = KEYMAP[e.code]; if (k) { setKey(k, false); e.preventDefault(); } });
+function bindBtn(id, k) {
+  const el = document.getElementById(id);
+  const on  = e => { e.preventDefault(); setKey(k, true);  el.classList.add("on"); };
+  const off = e => { e.preventDefault(); setKey(k, false); el.classList.remove("on"); };
+  el.addEventListener("pointerdown", on);
+  el.addEventListener("pointerup", off);
+  el.addEventListener("pointercancel", off);
+  el.addEventListener("pointerleave", off);
+  el.addEventListener("contextmenu", e => e.preventDefault());
+}
+bindBtn("btnL", "left"); bindBtn("btnR", "right"); bindBtn("btnJ", "jump");
+
+/* ---------------- 物理步 ---------------- */
+function overlap(a, b) { return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
+function pbox() { return { x: P.x, y: P.y, w: CFG.pw, h: CFG.ph }; }
+
+function die() {
+  if (P.dead) return;
+  P.dead = true; P.freeze = CFG.freezeSteps;
+  P.vx = 0; P.vy = 0;
+  deaths++; deathFrame = frame;
+}
+function respawn() {
+  P.x = LEVEL.spawn.x; P.y = LEVEL.spawn.y;
+  P.vx = 0; P.vy = 0; P.grounded = true;
+  P.coyote = 0; P.buffer = 0; P.cutDone = true;
+  P.dead = false; respawnFrame = frame;
+}
+
+function stepOnce() {
+  frame++;
+  /* 跳跃按下沿 → 写入缓冲（任何来源的输入都走这一条路） */
+  if (keys.jump && !prevJump) P.buffer = CFG.bufferSteps;
+  prevJump = keys.jump;
+
+  if (P.dead) {
+    P.freeze--;
+    if (P.freeze <= 0) respawn();
+    return;
+  }
+
+  /* 横移 */
+  const dir = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+  P.vx = dir * CFG.speed;
+  if (dir !== 0) P.face = dir;
+
+  /* 土狼：着地刷新，离地递减 */
+  if (P.grounded) P.coyote = CFG.coyoteSteps; else if (P.coyote > 0) P.coyote--;
+  if (P.buffer > 0) P.buffer--;
+
+  /* 起跳：着地或土狼期内，且有缓冲 */
+  if (P.buffer > 0 && (P.grounded || P.coyote > 0)) {
+    P.vy = -CFG.jumpVel;
+    P.grounded = false; P.coyote = 0; P.buffer = 0; P.cutDone = false;
+  }
+  /* 可变跳高：上升途中松开跳跃键，截断一次 */
+  if (!keys.jump && P.vy < 0 && !P.cutDone) { P.vy *= CFG.cutMul; P.cutDone = true; }
+
+  /* 重力：下落为上升的 1.35 倍 */
+  P.vy += (P.vy < 0 ? CFG.gUp : CFG.gDown) * STEP;
+  if (P.vy > CFG.maxFall) P.vy = CFG.maxFall;
+
+  /* X 轴移动 + 碰撞 */
+  P.x += P.vx * STEP;
+  for (const s of LEVEL.solids) {
+    if (overlap(pbox(), s)) {
+      if (P.vx > 0) P.x = s.x - CFG.pw; else if (P.vx < 0) P.x = s.x + s.w;
+    }
+  }
+  if (P.x < 0) P.x = 0; if (P.x > CFG.W - CFG.pw) P.x = CFG.W - CFG.pw;
+
+  /* Y 轴移动 + 碰撞 */
+  P.y += P.vy * STEP;
+  const wasGrounded = P.grounded;
+  P.grounded = false;
+  for (const s of LEVEL.solids) {
+    if (overlap(pbox(), s)) {
+      if (P.vy > 0 && P.y + CFG.ph - P.vy * STEP <= s.y + 0.01) { P.y = s.y - CFG.ph; P.vy = 0; P.grounded = true; }
+      else if (P.vy < 0) { P.y = s.y + s.h; P.vy = 0; }
+      else if (P.vy > 0) { P.y = s.y - CFG.ph; P.vy = 0; P.grounded = true; }
+    }
+  }
+  void wasGrounded;
+
+  /* 尖刺 / 掉落 */
+  for (const s of LEVEL.spikes) if (overlap(pbox(), spikeBox(s))) { die(); return; }
+  if (P.y > CFG.killY) { die(); return; }
+
+  /* 终点旗（原型仅置状态，不做结算） */
+  const f = LEVEL.flag;
+  if (!won && P.x + CFG.pw > f.x && P.x < f.x + 10 && P.y + CFG.ph > f.y - 92 && P.y < f.y) won = true;
+}
+
+/* ---------------- 渲染（奶蛙占位：程序图形 + 压扁拉伸） ---------------- */
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+function rr(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+function drawFrog() {
+  const t = frame * STEP;
+  let sx = 1, sy = 1;
+  if (P.dead) { sx = 1.55; sy = 0.30; }
+  else if (!P.grounded && P.vy < 0) { sx = 0.88; sy = 1.14; }
+  else if (!P.grounded) { sx = 0.94; sy = 1.08; }
+  else if (P.vx !== 0) { sy = 1 + 0.05 * Math.sin(t * 18); sx = 1 - 0.04 * Math.sin(t * 18); }
+  else { sy = 1 + 0.03 * Math.sin(t * 2.4); sx = 1 - 0.02 * Math.sin(t * 2.4); }
+  const cx = P.x + CFG.pw / 2, by = P.y + CFG.ph;
+  ctx.save();
+  ctx.translate(cx, by); ctx.scale(sx * P.face, sy);
+  /* 脚 */
+  ctx.fillStyle = "#a08b62";
+  ctx.beginPath(); ctx.ellipse(-11, -2, 7, 3.5, 0, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(11, -2, 7, 3.5, 0, 0, 7); ctx.fill();
+  /* 身子：奶黄水滴 */
+  ctx.fillStyle = "#ffd83d"; ctx.strokeStyle = "#dfa916"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.ellipse(0, -21, 19, 21, 0, 0, 7); ctx.fill(); ctx.stroke();
+  /* 肚皮：奶白 */
+  ctx.fillStyle = "#fff6d8";
+  ctx.beginPath(); ctx.ellipse(0, -13, 11.5, 12, 0, 0, 7); ctx.fill();
+  /* 眼：头两侧绿圆眼 */
+  for (const s of [-1, 1]) {
+    ctx.fillStyle = "#58c24a"; ctx.strokeStyle = "#3d8b34"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(s * 12, -40, 6.5, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#20242e";
+    ctx.beginPath(); ctx.arc(s * 12 + 1.5, -40, 3, 0, 7); ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.beginPath(); ctx.arc(s * 12 + 2.5, -41.5, 1.1, 0, 7); ctx.fill();
+  }
+  /* 嘴：细线 */
+  ctx.strokeStyle = "#8a6d1f"; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(-4, -26); ctx.lineTo(4, -26); ctx.stroke();
+  ctx.restore();
+}
+function draw() {
+  ctx.clearRect(0, 0, CFG.W, CFG.H);
+  /* 平台 */
+  for (const s of LEVEL.solids) {
+    ctx.fillStyle = "#2f9e8f"; rr(s.x, s.y, s.w, s.h, 6); ctx.fill();
+    ctx.fillStyle = "#267a6e"; rr(s.x, s.y + s.h - 8, s.w, 8, 4); ctx.fill();
+  }
+  /* 尖刺：高对比深红 */
+  ctx.fillStyle = "#c62f3b";
+  for (const s of LEVEL.spikes) {
+    for (let i = 0; i < s.n; i++) {
+      const x = s.x + i * TOOTH_W;
+      ctx.beginPath();
+      ctx.moveTo(x, s.y); ctx.lineTo(x + TOOTH_W / 2, s.y - TOOTH_H); ctx.lineTo(x + TOOTH_W, s.y);
+      ctx.closePath(); ctx.fill();
+    }
+  }
+  /* 终点旗 */
+  const f = LEVEL.flag;
+  ctx.strokeStyle = "#555"; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(f.x, f.y); ctx.lineTo(f.x, f.y - 92); ctx.stroke();
+  ctx.fillStyle = won ? "#ffd83d" : "#58c24a";
+  ctx.beginPath(); ctx.moveTo(f.x, f.y - 92); ctx.lineTo(f.x + 34, f.y - 80); ctx.lineTo(f.x, f.y - 68); ctx.closePath(); ctx.fill();
+  drawFrog();
+  if (won) {
+    ctx.fillStyle = "rgba(32,36,46,.55)"; ctx.fillRect(0, 0, CFG.W, CFG.H);
+    ctx.fillStyle = "#ffd83d"; ctx.font = "bold 44px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText("到终点啦！", CFG.W / 2, CFG.H / 2);
+  }
+  document.getElementById("deaths").textContent = deaths;
+}
+
+/* ---------------- 主循环（真实游玩） ---------------- */
+let auto = true, acc = 0, lastTs = -1;
+function loop(ts) {
+  requestAnimationFrame(loop);
+  if (lastTs < 0) { lastTs = ts; draw(); return; }
+  let dt = (ts - lastTs) / 1000; lastTs = ts;
+  if (dt > 0.1) dt = 0.1;
+  if (auto) {
+    acc += dt;
+    while (acc >= STEP) { stepOnce(); acc -= STEP; }
+  }
+  draw();
+}
+requestAnimationFrame(loop);
+
+/* ---------------- 测试钩子 ---------------- */
+function snapshot() {
+  return {
+    frame, time: frame * STEP,
+    x: P.x, y: P.y, vx: P.vx, vy: P.vy,
+    grounded: P.grounded, dead: P.dead, canControl: !P.dead,
+    coyoteLeft: P.coyote, bufferLeft: P.buffer,
+    deaths, won, deathFrame, respawnFrame
+  };
+}
+function resetAll() {
+  frame = 0; deaths = 0; won = false; deathFrame = -1; respawnFrame = -1;
+  keys.left = keys.right = keys.jump = false; prevJump = false;
+  P.x = LEVEL.spawn.x; P.y = LEVEL.spawn.y; P.vx = 0; P.vy = 0;
+  P.grounded = true; P.face = 1; P.coyote = 0; P.buffer = 0; P.cutDone = true;
+  P.dead = false; P.freeze = 0;
+}
+window.__game = {
+  config: CFG, level: LEVEL, STEP,
+  state: snapshot,
+  reset: resetAll,
+  setAuto(v) { auto = !!v; },
+  teleport(x, y) { P.x = x; P.y = y; P.vx = 0; P.vy = 0; P.grounded = false; P.coyote = 0; P.buffer = 0; },
+  keyDown(k) { setKey(k, true); },
+  keyUp(k) { setKey(k, false); },
+  press(k, steps) { /* 按住 k 若干步后松开（同步执行） */ setKey(k, true); for (let i = 0; i < steps; i++) stepOnce(); setKey(k, false); },
+  step(n) { for (let i = 0; i < n; i++) stepOnce(); },
+  /* 事件脚本：events=[{at:相对步, do:'down'|'up', key}]，返回逐帧 trace */
+  run(events, totalSteps) {
+    const ev = new Map();
+    for (const e of events || []) {
+      if (!ev.has(e.at)) ev.set(e.at, []);
+      ev.get(e.at).push(e);
+    }
+    const trace = [];
+    for (let i = 0; i < totalSteps; i++) {
+      const list = ev.get(i);
+      if (list) for (const e of list) setKey(e.key, e.do === "down");
+      stepOnce();
+      trace.push({
+        f: frame, x: +P.x.toFixed(3), y: +P.y.toFixed(3),
+        vx: +P.vx.toFixed(2), vy: +P.vy.toFixed(2),
+        g: P.grounded ? 1 : 0, dead: P.dead ? 1 : 0, deaths
+      });
+    }
+    return trace;
+  }
+};
+</script>
+</body>
+</html>
