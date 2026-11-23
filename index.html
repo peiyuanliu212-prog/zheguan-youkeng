@@ -1254,8 +1254,10 @@ let runTime = 0, clearTimer = 0;
 let camX = 0, shake = 0, flash = 0;
 let particles = [];
 
-/* ---- 加载进度（加载页驱动源）：全部图片资源逐张记 settled，失败也算 settled
-   （走各自的顶替/dead/回退口径），加载页进度 = done/total，永不卡死。 ---- */
+/* ---- 加载进度（加载页驱动源）：只数核心资源 21 项（奶蛙 15 帧＋悬浮图＋
+   4 张状态背景＋地图图），逐张记 settled，失败也算 settled（走各自的顶替/
+   dead/回退口径），加载页进度 = done/total。穿搭帧（288 张/15MB）不进
+   进度门——曾把真机卡在加载页数分钟——改由进标题后后台懒加载（见穿搭段）。 ---- */
 const LOAD = { total: 0, done: 0 };
 const bootT0 = performance.now();
 function loadCounted(im, onOk){
@@ -1269,7 +1271,7 @@ function loadCounted(im, onOk){
 /* ---- 四状态背景图＋移位转换特效（纯视觉：不碰物理、时序、判定） ----
    背景图 cover 预渲染成离屏瓦片（正＋镜像各一），横向镜像平铺、0.2 倍速视差。
    图片没加载完/失败时对应状态瓦片为 null，draw 自动回退旧背景（纯色天＋剪影）。 */
-const BG_FILES = ["bg/dawn.png", "bg/dusk.png", "bg/night.png", "bg/void.png"];
+const BG_FILES = ["bg/dawn.jpg", "bg/dusk.jpg", "bg/night.jpg", "bg/void.jpg"];
 const BG_TH = 540;                                // 瓦片高＝画布高
 const BG_TW = Math.round(768 * BG_TH / 512);      // 等比 cover 宽 = 810
 const bgTiles = [null, null, null, null];
@@ -1415,8 +1417,8 @@ let skinBtns = [];              // 形象页命中区（drawSkinsPanel 每帧重
 /* 健壮帧加载：逐帧记 settled（onload/onerror 都算），失败先自动重试 1 次再判 settled；
    全部 settled 后，最终失败的帧用相邻可用帧顶替该索引——保证每个索引永远有图可画；
    整套全军覆没才标 dead（调用方回退小点/跳过该套），不再出现「一帧挂掉整套回退」。 */
-function loadFramesRobust(count, srcFor, onAllSettled){
-  LOAD.total += count;              // 加载页进度：本套帧计入总数，逐帧 settled 计入完成
+function loadFramesRobust(count, srcFor, onAllSettled, counted){
+  if (counted) LOAD.total += count;   // counted=true 才计入加载页进度门（仅核心资源）
   const frames = [];
   const settled = new Array(count).fill(false);
   let settledCount = 0;
@@ -1440,7 +1442,7 @@ function loadFramesRobust(count, srcFor, onAllSettled){
     const im = new Image();
     const src = srcFor(i);
     let retried = false;
-    const settle = () => { if (!settled[i]){ settled[i] = true; LOAD.done++; if (++settledCount === count) finish(); } };
+    const settle = () => { if (!settled[i]){ settled[i] = true; if (counted) LOAD.done++; if (++settledCount === count) finish(); } };
     im.onload = settle;
     im.onerror = () => { if (!retried){ retried = true; im.src = src; } else settle(); };
     im.src = src;
@@ -1448,18 +1450,35 @@ function loadFramesRobust(count, srcFor, onAllSettled){
   }
   return frames;
 }
-/* 穿搭帧图加载：OUTFIT_SETS[id]＝整表 16 帧，OUTFIT_OVL[id]＝覆盖层 16 帧；ready/dead 逐套置位 */
+/* 穿搭帧图：OUTFIT_SETS[id]＝整表 16 帧，OUTFIT_OVL[id]＝覆盖层 16 帧；ready/dead 逐套置位。
+   穿搭共 288 张约 15MB，不进加载页进度门：先建空占位套（ready=false，形象页/选关弹窗/
+   合成栈按既有口径跳过未就绪套——底套未就绪回退基础蛙、缩略图不画），进标题后由
+   startOutfitLazyLoad 启动后台队列逐套串行加载（一套 16 帧齐发、套间串行，不抢首屏
+   带宽），逐套就绪后自动出现在形象页与合成栈里。 */
 const OUTFIT_SETS = {}, OUTFIT_OVL = {};
-function loadFrameSet(dir){
-  const set = { frames: [], ready: false, dead: false };
+for (const d of OUTFIT_DEFS){
+  OUTFIT_SETS[d.id] = { frames: [], ready: false, dead: false };
+  OUTFIT_OVL[d.id] = { frames: [], ready: false, dead: false };
+}
+const outfitQueue = [];
+for (const d of OUTFIT_DEFS){
+  outfitQueue.push([OUTFIT_SETS[d.id], "frames-outfits/" + d.id]);
+  outfitQueue.push([OUTFIT_OVL[d.id], "frames-outfits/" + d.id + "-overlay"]);
+}
+let outfitLazyStarted = false;
+function startOutfitLazyLoad(){
+  if (outfitLazyStarted) return;
+  outfitLazyStarted = true;
+  pumpOutfitQueue();
+}
+function pumpOutfitQueue(){
+  const job = outfitQueue.shift();
+  if (!job) return;
+  const set = job[0], dir = job[1];
   set.frames = loadFramesRobust(16,
     i => dir + "/f" + String(i).padStart(2, "0") + ".png",
-    dead => { set.dead = dead; set.ready = true; });
-  return set;
-}
-for (const d of OUTFIT_DEFS){
-  OUTFIT_SETS[d.id] = loadFrameSet("frames-outfits/" + d.id);
-  OUTFIT_OVL[d.id] = loadFrameSet("frames-outfits/" + d.id + "-overlay");
+    dead => { set.dead = dead; set.ready = true; pumpOutfitQueue(); },
+    false);
 }
 
 const ACH = [
@@ -1955,7 +1974,7 @@ const NAIWA_LOOP = [2, 3, 4, 10, 11, 12, 13, 14];  // 地面跑循环：只留�
 let naiwaReady = false, naiwaDead = false, naiwaFrame = 0, naiwaAir = 0;
 const NAIWA_FRAMES = loadFramesRobust(15,
   i => "frames/f" + String(i).padStart(2, "0") + ".png",
-  dead => { naiwaDead = dead; naiwaReady = true; });
+  dead => { naiwaDead = dead; naiwaReady = true; }, true);
 // 悬浮滑翔图（主人艺源通道生成，frames/hover.png，931×782 已去底）：滞空超过约 0.23s 后接管腾空姿势；原图面朝左，故绘制时朝向取反
 const NAIWA_HOVER = new Image();
 let naiwaHoverReady = false;
@@ -2768,9 +2787,10 @@ function drawDeathPanel(){
 }
 
 /* ---------------- 加载页 ----------------
-   启动先进 boot：进度由 LOAD 真实计数驱动（奶蛙帧/悬浮/背景/地图/穿搭全算），
-   全部 settled 才满格；frame() 里满格且满 0.8s 自动进标题。形象动画与标题预览
-   同口径：精灵就绪画蛙、未就绪画小点（健壮加载的顶替/dead 口径不变）。 */
+   启动先进 boot：进度由 LOAD 真实计数驱动（只数核心资源 21 项：奶蛙帧/悬浮/
+   背景/地图），全部 settled 才满格；frame() 里满格且满 0.8s 自动进标题，另有
+   8s 硬顶兜底（到点按真实进度直接切标题）。穿搭帧不进门、进标题后后台懒加载。
+   形象动画与标题预览同口径：精灵就绪画蛙、未就绪画小点（健壮加载的顶替/dead 口径不变）。 */
 function drawBoot(){
   const W = CONFIG.viewW, H = CONFIG.viewH;
   ctx.fillStyle = "#05060f"; ctx.fillRect(0, 0, W, H);
@@ -2804,7 +2824,7 @@ function drawBoot(){
 const mapImg = new Image();
 let mapImgReady = false;
 loadCounted(mapImg, () => { mapImgReady = true; });
-mapImg.src = "map/world-map.png";
+mapImg.src = "map/world-map.jpg";
 const MAP_PATH = [
   [24, 382], [80, 380], [140, 372], [200, 362], [240, 358], [285, 356], [330, 350], [375, 342], [406, 336],
   [448, 318], [475, 303], [500, 285], [522, 269], [540, 248], [553, 231],
@@ -3106,8 +3126,13 @@ let last = performance.now();
 let frozen = false; // test-only freeze (set via __game.freeze)
 function frame(now){
   const dt = Math.min((now - last) / 1000, 0.033); last = now;
-  // 加载页：资源全 settled 且最短展示 0.8s → 自动进标题（只在还停在 boot 时）
-  if (screen === "boot" && LOAD.total > 0 && LOAD.done >= LOAD.total && now - bootT0 >= 800) screen = "title";
+  // 加载页：核心资源全 settled 且最短展示 0.8s → 自动进标题（只在还停在 boot 时）；
+  // 硬顶 8s：到点无论进度多少直接进标题（进度条停在真实进度、不伪造满格，未就绪
+  // 资源走各自回退：小点/渐变背景/纯色地图底），绝不因等图锁人。进标题即启动穿搭懒加载。
+  if (screen === "boot" && now - bootT0 >= 800 && (LOAD.done >= LOAD.total || now - bootT0 >= 8000)){
+    screen = "title";
+    startOutfitLazyLoad();
+  }
   if (!frozen){ if (screen === "dying") tickDeath(dt); else step(dt); }
   draw();
   requestAnimationFrame(frame);
