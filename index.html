@@ -2820,7 +2820,7 @@ function drawBoot(){
 /* ---------------- 闯关地图页 ----------------
    地图图 1536×1024 按宽 960 缩放（高 640）上下居中裁切，保住中部路径带。
    节点沿画中沙土路的手调折线按弧长均匀取 32 点；区域按索引分三区，
-   与图面三景对应：0–9 入门（黎明草甸）/ 10–19 进阶（黄昏雪山）/ 20–31 高手（虚空荒原）。 */
+   与图面三景对应：0–9 入门（黎明草甸）/ 10–19 进阶（黄昏雪山）/ 20–31 高阶（虚空荒原）。 */
 const mapImg = new Image();
 let mapImgReady = false;
 loadCounted(mapImg, () => { mapImgReady = true; });
@@ -2852,11 +2852,11 @@ const MAP_NODES = (() => {
   return pts;
 })();
 const MAP_REGIONS = [
-  { name: "入门", color: "#ffd166", cx: 160 },
-  { name: "进阶", color: "#b197fc", cx: 480 },
-  { name: "高手", color: "#66d9e8", cx: 800 }
+  { name: "入门", color: "#ffb347", cx: 160 },
+  { name: "进阶", color: "#b388ff", cx: 480 },
+  { name: "高阶", color: "#39d0d8", cx: 800 }
 ];
-let mapPanel = null;            // null | "board" | "ach" | "skins" | "settings"（地图页上的浮层）
+let mapPanel = null;            // null | "ach" | "skins" | "settings"（地图页浮层；排行榜改走各平台平台榜，drawBoard 代码保留但已无入口能置为 "board"）
 let mapCard = null;             // 选关弹窗的关卡索引（null＝未打开）
 let mapBtns = [], cardBtns = [], settingsBtns = [];
 let mapShake = null;            // {i, t0} 点锁定节点的小震
@@ -2864,6 +2864,70 @@ let mapHint = null;             // {text, t0} 地图页一行小字提示
 function levelCleared(i){
   const r = records.lv[i];
   return !!(r && r.t !== null && r.t !== undefined);
+}
+/* 地图节点：石刻徽章四态（小屏靠色相＋锁/勾图样区分，不依赖读数字）
+   通关＝琥珀金渐变盘＋深金描边＋右上绿徽白勾；前沿＝区域 accent 盘＋白字＋呼吸脉冲；
+   已解锁未通关＝米白石盘＋accent 描边；未解锁＝深石板盘＋手绘锁（代替数字）。 */
+function drawMapNode(x, y, i, locked, cleared, frontier, accent, now){
+  const r = frontier ? 18 : 16;
+  // 柔和椭圆投影
+  ctx.beginPath(); ctx.ellipse(x, y + r * 0.8, r * 0.98, r * 0.34, 0, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(0,0,0,0.32)"; ctx.fill();
+  // 前沿呼吸脉冲（沿用既有节奏 sin(now/210)）
+  if (frontier){
+    const s = Math.sin(now / 210);
+    ctx.beginPath(); ctx.arc(x, y, r + 4.5 + s * 2.5, 0, Math.PI * 2);
+    ctx.strokeStyle = accent; ctx.globalAlpha = 0.45 + 0.3 * s; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  // 盘面
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  if (cleared){
+    const gr = ctx.createLinearGradient(x, y - r, x, y + r);
+    gr.addColorStop(0, "#ffe9a8"); gr.addColorStop(0.55, "#ffc95e"); gr.addColorStop(1, "#ef9a1c");
+    ctx.fillStyle = gr;
+  }
+  else if (frontier) ctx.fillStyle = accent;
+  else if (locked) ctx.fillStyle = "#2e3242";
+  else ctx.fillStyle = "#f3ead8";
+  ctx.fill();
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = cleared ? "#a86400" : frontier ? "rgba(255,255,255,0.9)" : locked ? "#6d6a8f" : accent;
+  ctx.stroke();
+  // 内圈刻线（石刻感）
+  ctx.beginPath(); ctx.arc(x, y, r - 5, 0, Math.PI * 2);
+  ctx.strokeStyle = cleared ? "rgba(122,72,0,0.32)" : frontier ? "rgba(255,255,255,0.35)" : locked ? "rgba(255,255,255,0.07)" : "rgba(96,84,52,0.20)";
+  ctx.lineWidth = 1; ctx.stroke();
+  // 上沿高光弧
+  ctx.beginPath(); ctx.arc(x, y, r - 2.6, -Math.PI * 0.82, -Math.PI * 0.18);
+  ctx.strokeStyle = locked ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.55)";
+  ctx.lineWidth = 2; ctx.stroke();
+  if (locked){
+    // 手绘锁：锁梁弧＋圆角锁身＋锁孔（代替数字，一眼可读）
+    ctx.strokeStyle = "#a7aec7"; ctx.lineWidth = 2.2; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.arc(x, y - 2.5, 4.8, Math.PI, 0); ctx.stroke();
+    ctx.fillStyle = "#a7aec7"; rr(x - 6.5, y - 2.5, 13, 10.5, 3); ctx.fill();
+    ctx.fillStyle = "#2e3242";
+    ctx.beginPath(); ctx.arc(x, y + 2.2, 1.9, 0, Math.PI * 2); ctx.fill();
+    ctx.lineCap = "butt";
+    return;
+  }
+  // 数字（粗体）
+  ctx.font = "bold " + (frontier ? 16 : 14) + "px system-ui"; ctx.textAlign = "center";
+  if (frontier){ ctx.shadowColor = "rgba(0,0,0,0.35)"; ctx.shadowBlur = 3; }
+  ctx.fillStyle = cleared ? "#5f3600" : frontier ? "#ffffff" : "#3c4152";
+  ctx.fillText(String(i + 1), x, y + 5);
+  ctx.shadowBlur = 0;
+  if (cleared){
+    // 右上角小圆徽＋白勾
+    const bx = x + r * 0.74, by = y - r * 0.74;
+    ctx.beginPath(); ctx.arc(bx, by, 7, 0, Math.PI * 2);
+    ctx.fillStyle = "#2f9e44"; ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.8; ctx.lineCap = "round"; ctx.lineJoin = "round";
+    ctx.beginPath(); ctx.moveTo(bx - 3.2, by + 0.1); ctx.lineTo(bx - 0.9, by + 2.7); ctx.lineTo(bx + 3.6, by - 2.7); ctx.stroke();
+    ctx.lineCap = "butt";
+  }
 }
 function drawMap(){
   const W = CONFIG.viewW, H = CONFIG.viewH, now = performance.now();
@@ -2877,36 +2941,18 @@ function drawMap(){
     ctx.fillStyle = r.color; ctx.font = "bold 15px system-ui";
     ctx.fillText(r.name, r.cx, 83);
   }
-  // 节点：状态每帧按存档现算（通关后回地图即时刷新）
+  // 节点：状态每帧按存档现算（通关后回地图即时刷新）；四态石刻徽章见 drawMapNode
   MAP_NODES.forEach((p, i) => {
     let dx = 0;
     if (mapShake && mapShake.i === i){
       const age = now - mapShake.t0;
       if (age < 400) dx = Math.sin(age / 28) * 4 * (1 - age / 400);
     }
-    const x = p.x + dx, y = p.y;
     const locked = i > unlocked, cleared = levelCleared(i), frontier = i === unlocked && !cleared;
-    ctx.beginPath(); ctx.arc(x, y, 16, 0, Math.PI * 2);
-    ctx.fillStyle = locked ? "rgba(10,12,24,0.82)" : cleared ? "#ffd166" : frontier ? "#fff3bf" : "rgba(255,255,255,0.88)";
-    ctx.fill();
-    ctx.strokeStyle = locked ? "rgba(255,255,255,0.35)" : "rgba(20,20,43,0.55)"; ctx.lineWidth = 2; ctx.stroke();
-    if (frontier){
-      const pr = 20 + Math.sin(now / 210) * 3.5;
-      ctx.beginPath(); ctx.arc(x, y, pr, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(255,209,102," + (0.55 + 0.35 * Math.sin(now / 210)) + ")"; ctx.lineWidth = 2.5; ctx.stroke();
-    }
-    ctx.font = "bold 14px system-ui"; ctx.textAlign = "center";
-    if (locked){ ctx.font = "12px system-ui"; ctx.fillText("🔒", x, y + 4); }
-    else {
-      ctx.fillStyle = "#14142b";
-      ctx.fillText(String(i + 1), x, y + 5);
-      if (cleared){
-        ctx.fillStyle = "#51cf66"; ctx.font = "bold 13px system-ui";
-        ctx.fillText("✓", x + 13, y - 9);
-      }
-    }
+    const accent = MAP_REGIONS[i < 10 ? 0 : i < 20 ? 1 : 2].color;
+    drawMapNode(p.x + dx, p.y, i, locked, cleared, frontier, accent, now);
   });
-  // 顶栏：返回 / 标题 / 形象·排行榜·成就·设置
+  // 顶栏：返回 / 标题 / 形象·成就·设置（排行榜已下线，改走各平台平台榜）
   mapBtns = [];
   ctx.fillStyle = "rgba(5,6,16,0.85)"; ctx.fillRect(0, 0, W, 52);
   ctx.fillStyle = "rgba(255,255,255,0.10)"; rr(12, 8, 104, 36, 10); ctx.fill();
@@ -2917,8 +2963,7 @@ function drawMap(){
   ctx.fillText("闯关地图", W / 2, 33);
   const topItems = [
     { id: "skins", label: "形象", x: 652 },
-    { id: "board", label: "排行榜", x: 728 },
-    { id: "ach",   label: "成就", x: 804 },
+    { id: "ach",   label: "成就", x: 766 },
     { id: "settings", label: "设置", x: 880 }
   ];
   ctx.font = "14px system-ui";
@@ -3164,6 +3209,7 @@ window.__game = {
   get mapCard(){ return mapCard; },
   get mapPanel(){ return mapPanel; },
   get mapNodes(){ return MAP_NODES.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) })); },
+  get mapRegions(){ return MAP_REGIONS.map(r => r.name); },
   get phases(){ return (level.phases || []).map(p => phaseOf(p)); },
   pressShift, loadLevel: (i) => { loadLevel(i); screen = "play"; },
   // test-only: place the player (auto-run has no stop input; used to exercise the trap kill branch)
