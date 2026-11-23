@@ -1148,6 +1148,27 @@ const LEVELS = [
     events: [{ x: 8900 }, { x: 12850 }],
     orbs: [{ x: 10665, y: 305 }],
     goal: { x: 14820, y: 96, w: 44, h: 70, surf: 118, ceil:true }
+  },
+  {
+    /* 展示关（本批新增，排在最后）：单带巡逻刺守地面 → 两颗计时相位刺错峰
+       → 一颗联动相位刺收尾。天轨只铺到第二段末，收尾段必须在地面解决。 */
+    name: "试炼 · 相位",
+    width: 4200, spawn: { x: 60, y: 400 },
+    hint: "",
+    platforms: [
+      { x:-40, y:460, w:4280, set:"AB" },
+      { x:-40, y:36,  w:2940, set:"AB" }
+    ],
+    spikes: [],
+    movers: [
+      { x:1050, y:460, set:"A", axis:"x", dist:130, speed:1.1, phase:0 }
+    ],
+    phases: [
+      { x:1900, y:460, on:"floor", period:2.5, offset:0, link:false },
+      { x:2300, y:460, on:"floor", period:2.5, offset:2, link:false },
+      { x:3300, y:460, on:"floor", period:2.5, offset:0, link:true }
+    ],
+    goal: { x: 3950, y: 368, w: 44, h: 92, surf: 460 }
   }
 ];
 
@@ -1401,7 +1422,7 @@ for (const d of OUTFIT_DEFS){
 const ACH = [
   { id: "first",  name: "第一步",   desc: "通关第 1 关" },
   { id: "half",   name: "过半",     desc: "通关第 15 关" },
-  { id: "all",    name: "全境移位", desc: "通关全部 31 关" },
+  { id: "all",    name: "全境移位", desc: "通关全部 32 关" },
   { id: "clean",  name: "毫发无损", desc: "任意一关零死亡通关" },
   { id: "frugal", name: "精打细算", desc: "全程不超过 720 次移位通关" },
   { id: "swift",  name: "疾风",     desc: "全程 1700 秒内通关" }
@@ -1445,6 +1466,7 @@ function loadLevel(i){
   attemptTime = 0; evWarn = null; evDone = {}; orbTaken = {};
   trapRows = []; trapScorch = []; trapHintArmed = false; trapHintEver = false; deathFx = null; runPhase = 0;
   checkpoint = null; groundTime = 0; revivesUsed = 0; invulnT = 0;
+  linkShiftCount = 0; phasePrev = (level.phases || []).map(p => phaseOf(p)); phasePulse = (level.phases || []).map(() => 0);
   player.x = level.spawn.x; player.y = level.spawn.y;
   player.vx = 0; player.vy = 0; player.grounded = false;
   camX = 0; particles = [];
@@ -1455,6 +1477,7 @@ function respawn(){
   ring = 0; shiftCD = 0; coyote = 0; airFlip = true;
   attemptTime = 0; evWarn = null; evDone = {}; orbTaken = {};
   checkpoint = null; groundTime = 0; invulnT = 0;
+  linkShiftCount = 0; phasePrev = (level.phases || []).map(p => phaseOf(p)); phasePulse = (level.phases || []).map(() => 0);
   trapRows = [];
   trapHintArmed = lastDeathTrap && !trapHintEver;
   lastDeathTrap = false;
@@ -1519,6 +1542,11 @@ function spikeOverlap(){
     const sb = m.hang ? { x: mp.x, y: mp.y, w: 26, h: 20 } : { x: mp.x, y: mp.y - 20, w: 26, h: 20 };
     if (overlaps(box, sb)) return true;
   }
+  // 相位刺：与 step 致命判定同口径——当前正实体的相位刺所在位置不算安全站立
+  for (const p of level.phases || []){
+    if (phaseOf(p) !== ring) continue;
+    if (overlaps(box, phaseBox(p))) return true;
+  }
   return false;
 }
 let runPhase = 0, landSquash = 0, wasGrounded = false;
@@ -1543,6 +1571,21 @@ function moverPos(m){
   const o = Math.sin(attemptTime * m.speed + m.phase) * m.dist;
   return { x: m.x + (m.axis === "x" ? o : 0), y: m.y + (m.axis === "y" ? o : 0) };
 }
+/* —— 相位刺（phases）：钉死在某个表面上的刺，相位在 0→1→2→3 循环；只有玩家
+   当前 ring 与它的相位相同那一刻才是实体、触之致死，其余时候无害穿过。
+   计时版（link:false）每 period 秒进一格（offset 定初相，随 attemptTime 走、
+   每个 attempt 完全确定性）；联动版（link:true）不计时，玩家每次成功移位进一格。
+   信息全给：非实体时以「它当前相位的状态主题色」半透明虚影显示，另有四色
+   指示点标出轮转位置——考的是状态规划，不是猜。 */
+let linkShiftCount = 0;              // 本 attempt 内玩家成功移位次数（联动相位刺的时钟）
+let phasePrev = [], phasePulse = []; // 每刺上一帧相位 / 相位推进脉冲剩余秒
+function phaseOf(p){
+  if (p.link) return (((p.offset || 0) + linkShiftCount) % 4 + 4) % 4;
+  const per = p.period || 2.5;
+  return (((p.offset || 0) + Math.floor(attemptTime / per)) % 4 + 4) % 4;
+}
+function phaseColor(k){ const s = CONFIG.states[k]; return s.plat === "A" ? s.platA : s.platB; }
+function phaseBox(p){ return p.on === "ceil" ? { x: p.x, y: p.y, w: 26, h: 20 } : { x: p.x, y: p.y - 20, w: 26, h: 20 }; }
 function forceShift(dir){
   ring = (ring + dir + CONFIG.states.length) % CONFIG.states.length;
   flash = 0.35; shake = Math.max(shake, 5);
@@ -1571,6 +1614,7 @@ function shift(dir){
   }
   const prevPlat = curState().plat;
   ring = next;
+  linkShiftCount++;   // 联动相位刺：玩家每次成功移位，它的相位进一格
   if (gravFlip) airFlip = false;
   // 移位陷阱：陷阱区内发生平台组切换（A↔B）即触发「落点生刺」
   if (level.trap && curState().plat !== prevPlat && player.x >= level.trap.x0 && player.x <= level.trap.x1) trapTrigger();
@@ -1763,6 +1807,15 @@ function step(dt){
     const mp = moverPos(m);
     const sb = m.hang ? { x: mp.x, y: mp.y, w: 26, h: 20 } : { x: mp.x, y: mp.y - 20, w: 26, h: 20 };
     if (overlaps(box, sb)) { die(); return; }
+  }
+  // 相位刺：相位推进瞬间记一个缩放脉冲（让轮换看得见）；仅 ring 与相位相同才是实体
+  const phs = level.phases || [];
+  for (let i = 0; i < phs.length; i++){
+    const ph = phaseOf(phs[i]);
+    if (phasePrev[i] !== undefined && ph !== phasePrev[i]) phasePulse[i] = 0.25;
+    phasePrev[i] = ph;
+    if (phasePulse[i] > 0) phasePulse[i] -= dt;
+    if (ph === ring && overlaps(box, phaseBox(phs[i]))) { die(); return; }
   }
   // 移位陷阱「落点生刺」：升起进度 ≥0.85 的刺排致命
   if (level.trap){
@@ -2092,20 +2145,68 @@ function draw(){
     else { ctx.moveTo(s.x, s.y); ctx.lineTo(s.x + 13, s.y - 20); ctx.lineTo(s.x + 26, s.y); }
     ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
   }
-  // movers: track + spike at current phase position
+  // movers: 加粗轨道 + 带实刺的滑座（刺簇约 30px、本体色随所在平台组，一眼是威胁；
+  // 判定盒仍是原来的 26×20，视觉只做大不改判定）
   for (const m of level.movers || []){
     const mp = moverPos(m);
-    ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = 2;
+    const col = m.set === "B" ? st.platB : st.platA;
+    const cxm = m.x + 13;
+    // 轨道：滑座中心轨迹——竖轨穿行程全程、横轨贴地面成槽；两端止点
+    ctx.strokeStyle = m.axis === "y" ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.30)";
+    ctx.lineWidth = m.axis === "y" ? 5 : 4; ctx.lineCap = "round";
     ctx.beginPath();
-    if (m.axis === "y"){ ctx.moveTo(m.x + 13, m.y - m.dist); ctx.lineTo(m.x + 13, m.y + m.dist); }
-    else { ctx.moveTo(m.x - m.dist, m.y - 10); ctx.lineTo(m.x + m.dist, m.y - 10); }
+    if (m.axis === "y"){ ctx.moveTo(cxm, m.y - m.dist); ctx.lineTo(cxm, m.y + m.dist); }
+    else { ctx.moveTo(cxm - m.dist, m.y + 3); ctx.lineTo(cxm + m.dist, m.y + 3); }
     ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.45)";
+    if (m.axis === "y"){
+      ctx.beginPath(); ctx.arc(cxm, m.y - m.dist, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cxm, m.y + m.dist, 3, 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.fillRect(cxm - m.dist - 2, m.y - 3, 4, 10);
+      ctx.fillRect(cxm + m.dist - 2, m.y - 3, 4, 10);
+    }
     if (!spikeActive(m)) ctx.globalAlpha = 0.3;
-    ctx.fillStyle = "#ff922b";
+    // 滑座：底座板 + 三尖刺簇
+    ctx.fillStyle = col;
+    if (m.hang){
+      rr(mp.x - 4, mp.y - 6, 34, 7, 3); ctx.fill();
+      for (let k = 0; k < 3; k++){
+        const tx = mp.x - 2 + k * 10;
+        ctx.beginPath(); ctx.moveTo(tx, mp.y); ctx.lineTo(tx + 5, mp.y + 20); ctx.lineTo(tx + 10, mp.y); ctx.closePath(); ctx.fill();
+      }
+    } else {
+      rr(mp.x - 4, mp.y - 1, 34, 7, 3); ctx.fill();
+      for (let k = 0; k < 3; k++){
+        const tx = mp.x - 2 + k * 10;
+        ctx.beginPath(); ctx.moveTo(tx, mp.y - 3); ctx.lineTo(tx + 5, mp.y - 23); ctx.lineTo(tx + 10, mp.y - 3); ctx.closePath(); ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+  // 相位刺：实体＝其相位的状态主题色实心；非实体＝同色半透明虚影（颜色即它当前
+  // 相位）；刺旁四色指示点标出轮转位置，当前相位点亮放大——轮到谁一目了然
+  for (let i = 0; i < (level.phases || []).length; i++){
+    const p = level.phases[i], ph = phaseOf(p), col = phaseColor(ph);
+    const solid = ph === ring;
+    const cx = p.x + 13;
+    const pulse = phasePulse[i] > 0 ? 1 + 0.4 * (phasePulse[i] / 0.25) : 1;
+    ctx.save();
+    ctx.globalAlpha = solid ? 1 : 0.28;
+    ctx.fillStyle = col;
+    ctx.translate(cx, p.y); ctx.scale(pulse, pulse); ctx.translate(-cx, -p.y);
     ctx.beginPath();
-    if (m.hang){ ctx.moveTo(mp.x, mp.y); ctx.lineTo(mp.x + 13, mp.y + 20); ctx.lineTo(mp.x + 26, mp.y); }
-    else { ctx.moveTo(mp.x, mp.y); ctx.lineTo(mp.x + 13, mp.y - 20); ctx.lineTo(mp.x + 26, mp.y); }
-    ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
+    if (p.on === "ceil"){ ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + 13, p.y + 20); ctx.lineTo(p.x + 26, p.y); }
+    else { ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + 13, p.y - 20); ctx.lineTo(p.x + 26, p.y); }
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+    const dy = p.on === "ceil" ? p.y + 34 : p.y - 34;
+    for (let k = 0; k < 4; k++){
+      ctx.globalAlpha = k === ph ? 1 : 0.3;
+      ctx.fillStyle = phaseColor(k);
+      ctx.beginPath(); ctx.arc(cx + (k - 1.5) * 11, dy, k === ph ? 4 : 2.6, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
   }
   // orbs
   for (let i = 0; i < (level.orbs || []).length; i++){
@@ -2754,6 +2855,7 @@ window.__game = {
   get invuln(){ return invulnT; },
   get deadBtns(){ return deadBtns.map(b => ({ action: b.action, disabled: !!b.disabled })); },
   get evDir(){ return evWarn ? evWarn.dir : 0; },
+  get phases(){ return (level.phases || []).map(p => phaseOf(p)); },
   pressShift, loadLevel: (i) => { loadLevel(i); screen = "play"; },
   // test-only: place the player (auto-run has no stop input; used to exercise the trap kill branch)
   warp: (x, y) => { player.x = x; if (y !== undefined) player.y = y; player.vy = 0; },
