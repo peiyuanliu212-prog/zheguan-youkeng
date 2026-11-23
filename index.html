@@ -1225,13 +1225,69 @@ function tutAdvance(){
 /* ---------------- state ---------------- */
 const cv = document.getElementById("cv");
 const ctx = cv.getContext("2d");
-let screen = "title";           // title | play | clear | win
+let screen = "title";           // title | play | clear | win | dying（死亡定格）| dead（死亡面板自选）
 let ring = 0;                   // world state, ONLY changed by shift()
 let levelIdx = 0;
 let deaths = 0;
 let runTime = 0, clearTimer = 0;
 let camX = 0, shake = 0, flash = 0;
 let particles = [];
+
+/* ---- 四状态背景图＋移位转换特效（纯视觉：不碰物理、时序、判定） ----
+   背景图 cover 预渲染成离屏瓦片（正＋镜像各一），横向镜像平铺、0.2 倍速视差。
+   图片没加载完/失败时对应状态瓦片为 null，draw 自动回退旧背景（纯色天＋剪影）。 */
+const BG_FILES = ["bg/dawn.png", "bg/dusk.png", "bg/night.png", "bg/void.png"];
+const BG_TH = 540;                                // 瓦片高＝画布高
+const BG_TW = Math.round(768 * BG_TH / 512);      // 等比 cover 宽 = 810
+const bgTiles = [null, null, null, null];
+BG_FILES.forEach((src, i) => {
+  const im = new Image();
+  im.onload = () => {
+    const mk = (flip) => {
+      const c = document.createElement("canvas"); c.width = BG_TW; c.height = BG_TH;
+      const g = c.getContext("2d");
+      if (flip){ g.translate(BG_TW, 0); g.scale(-1, 1); }
+      g.drawImage(im, 0, 0, BG_TW, BG_TH);
+      return c;
+    };
+    bgTiles[i] = { n: mk(false), f: mk(true) };
+  };
+  im.src = src;
+});
+let bgFrom = 0, bgTo = 0, bgT0 = 0;               // 交叉淡入 from→to（0.35s）
+let shiftPulse = null;                            // {t0, color} 玩家光环脉冲
+function stateThemeColor(){ const s = curState(); return s.plat === "A" ? s.platA : s.platB; }
+function shiftFx(){
+  const color = stateThemeColor();
+  shiftPulse = { t0: performance.now(), color };
+  const cx = player.x + 15, cy = player.y + 15;
+  for (let i = 0; i < 16; i++){
+    const a = (i / 16) * Math.PI * 2 + Math.random() * 0.4, sp = 90 + Math.random() * 140;
+    particles.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0.3, color });
+  }
+}
+function drawBgTiles(idx, alpha){
+  const t = bgTiles[idx]; if (!t) return false;
+  const period = BG_TW * 2;
+  const start = -(((camX * 0.2) % period) + period) % period;
+  ctx.save(); ctx.globalAlpha = alpha;
+  for (let x = start; x < CONFIG.viewW; x += period){
+    ctx.drawImage(t.n, x, 0);
+    ctx.drawImage(t.f, x + BG_TW, 0);
+  }
+  ctx.restore();
+  return true;
+}
+/* 画当前状态背景图（含交叉淡入）；返回 false＝无图可用，调用方回退旧背景 */
+function drawStateBg(){
+  const now = performance.now();
+  if (ring !== bgTo){ bgFrom = bgTo; bgTo = ring; bgT0 = now; }
+  const a = Math.min(1, (now - bgT0) / 350);
+  if (a >= 1) bgFrom = bgTo;
+  let drew = drawBgTiles(bgFrom, 1);
+  if (bgTo !== bgFrom) drew = drawBgTiles(bgTo, a) || drew;
+  return drew;
+}
 const player = { x:0, y:0, vx:0, vy:0, grounded:false, face:1 };
 let level = LEVELS[0];
 
@@ -1388,6 +1444,7 @@ function loadLevel(i){
   levelShifts = 0; levelTime = 0; levelDeathsStart = deaths;
   attemptTime = 0; evWarn = null; evDone = {}; orbTaken = {};
   trapRows = []; trapScorch = []; trapHintArmed = false; trapHintEver = false; deathFx = null; runPhase = 0;
+  checkpoint = null; groundTime = 0; revivesUsed = 0; invulnT = 0;
   player.x = level.spawn.x; player.y = level.spawn.y;
   player.vx = 0; player.vy = 0; player.grounded = false;
   camX = 0; particles = [];
@@ -1397,6 +1454,7 @@ function respawn(){
   player.vx = 0; player.vy = 0;
   ring = 0; shiftCD = 0; coyote = 0; airFlip = true;
   attemptTime = 0; evWarn = null; evDone = {}; orbTaken = {};
+  checkpoint = null; groundTime = 0; invulnT = 0;
   trapRows = [];
   trapHintArmed = lastDeathTrap && !trapHintEver;
   lastDeathTrap = false;
@@ -1429,7 +1487,40 @@ let trapRows = [];        // {x, t0} 本次尝试内已触发的刺排（t0 = �
 let trapScorch = [];      // {x} 焦痕标记
 let trapHintArmed = false, trapHintEver = false;
 let lastDeathTrap = false;
-let deathFx = null;       // {x, y, grav, t} 死亡压扁残影（纯视觉，不改即时重开节奏）
+let deathFx = null;       // {x, y, grav, t} 死亡压扁残影（定格播完弹死亡面板，不再自动重生）
+/* —— 死亡自选：安全检查点 / 广告复活 ——
+   检查点＝玩家最后一次连续站在实地面上 ≥0.3s 的位置（连同当时 ring），只存内存、
+   进关重置；记录发生在每步全部致命判定之后，且与陷阱刺排/活刺/巡逻刺重叠的位置
+   不记（与致命判定同口径的盒子），不把死点记成安全点。广告复活每关上限 2 次，
+   复活后 1s 无敌防落点连环死。 */
+let checkpoint = null;    // {x, y, ring}
+let groundTime = 0;       // 连续着地计时（秒）
+let revivesUsed = 0;      // 本关已用广告复活次数
+let invulnT = 0;          // 复活后无敌剩余（秒）
+const REVIVE_MAX = 2;
+function trapRowOverlap(){
+  if (!level.trap) return false;
+  const S = CONFIG.playerSize;
+  const box = { x: player.x + 5, y: player.y + 5, w: S - 10, h: S - 10 };
+  return trapRows.some(r => overlaps(box, { x: r.x, y: level.trap.surf - 20, w: TRAP_W, h: 20 }));
+}
+/* 与 step 里致命判定同口径的盒子：玩家是否正与任一活刺/巡逻刺重叠 */
+function spikeOverlap(){
+  const S = CONFIG.playerSize;
+  const box = { x: player.x + 5, y: player.y + 5, w: S - 10, h: S - 10 };
+  for (const s of level.spikes){
+    if (!spikeActive(s)) continue;
+    const sb = s.hang ? { x: s.x, y: s.y, w: 26, h: 20 } : { x: s.x, y: s.y - 20, w: 26, h: 20 };
+    if (overlaps(box, sb)) return true;
+  }
+  for (const m of level.movers || []){
+    if (!spikeActive(m)) continue;
+    const mp = moverPos(m);
+    const sb = m.hang ? { x: mp.x, y: mp.y, w: 26, h: 20 } : { x: mp.x, y: mp.y - 20, w: 26, h: 20 };
+    if (overlaps(box, sb)) return true;
+  }
+  return false;
+}
 let runPhase = 0, landSquash = 0, wasGrounded = false;
 const SHOT = (() => { try { return new URLSearchParams(location.search).has("shot"); } catch(e){ return false; } })();
 function trapProgress(r){ return Math.max(0, Math.min(1, (attemptTime - r.t0) / TRAP_RISE)); }
@@ -1456,6 +1547,7 @@ function forceShift(dir){
   ring = (ring + dir + CONFIG.states.length) % CONFIG.states.length;
   flash = 0.35; shake = Math.max(shake, 5);
   burst(player.x + 15, player.y + 15, "#ffd43b");
+  shiftPulse = { t0: performance.now(), color: "#ffd43b" };
   sfx("shift", dir);
 }
 /* THE single entry point that may change the world state.
@@ -1485,7 +1577,7 @@ function shift(dir){
   shiftCD = 0.4;
   runShifts++; levelShifts++;
   flash = 0.35; shake = Math.max(shake, 3);
-  burst(player.x + 15, player.y + 15, curState().plat === "A" ? curState().platA : curState().platB);
+  shiftFx();
   sfx("shift", dir);
 }
 
@@ -1549,6 +1641,7 @@ const Music = (() => {
 /* ---------------- input ---------------- */
 function pressShift(dir){
   audio();
+  if (screen === "dead") { deathReplay(); return; }   // 死亡面板在时：任意移位键＝直接重玩本关（保快速循环）
   if (screen === "title" && titlePanel) { titlePanel = null; return; }
   if (screen === "title") { runTime = 0; deaths = 0; runShifts = 0; achToast = ""; screen = "play"; loadLevel(0); Music.start(); return; }
   if (screen === "win")   { screen = "title"; return; }
@@ -1602,6 +1695,15 @@ cv.addEventListener("pointerdown", (e) => {
       if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h){ handleNav(b.action); return; }
     }
   }
+  if (screen === "dead"){
+    for (const b of deadBtns){
+      if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h){ if (!b.disabled) handleDeath(b.action); return; }
+    }
+    // 点任意移位触控垫＝直接重玩本关；面板其它区域点击不响应（不误触、不锁人）
+    if (padL && x >= padL.x && x <= padL.x + padL.w && y >= padL.y && y <= padL.y + padL.h) { deathReplay(); return; }
+    if (padR && x >= padR.x && x <= padR.x + padR.w && y >= padR.y && y <= padR.y + padR.h) { deathReplay(); return; }
+    return;
+  }
   if (padL && x >= padL.x && x <= padL.x + padL.w && y >= padL.y && y <= padL.y + padL.h) pressShift(-1);
   else if (padR && x >= padR.x && x <= padR.x + padR.w && y >= padR.y && y <= padR.y + padR.h) pressShift(1);
   else if (screen !== "play") pressShift(1);
@@ -1644,6 +1746,9 @@ function step(dt){
     }
   }
   if (player.grounded) { coyote = 0.12; airFlip = true; } else coyote -= dt;
+  // 安全检查点计时：连续着地时间（记录动作在全机关卡判定之后，见下方 goal 前）
+  if (player.grounded) groundTime += dt; else groundTime = 0;
+  if (invulnT > 0) invulnT -= dt;
   let box = { x: player.x, y: player.y, w: S, h: S };
   // spikes
   box = { x: player.x + 5, y: player.y + 5, w: S - 10, h: S - 10 };
@@ -1691,6 +1796,10 @@ function step(dt){
   }
   // fell / flew out
   if (player.y > CONFIG.killBelowY || player.y < CONFIG.killAboveY) { die(); return; }
+  // 安全检查点记录：本步已通过全部致命判定（活着的实地面站立）才记——连续着地 ≥0.3s
+  // 的最后位置＋当时 ring；压着陷阱刺排或与活刺/巡逻刺重叠的位置不记（不把死点记成安全点）
+  if (player.grounded && groundTime >= 0.3 && !trapRowOverlap() && !spikeOverlap())
+    checkpoint = { x: player.x, y: player.y, ring };
   // goal (zone box; works for floor flags and ceiling flags)
   const g = level.goal;
   if (overlaps({ x: player.x, y: player.y, w: S, h: S }, g)){
@@ -1718,9 +1827,24 @@ function step(dt){
   if (shake > 0) shake = Math.max(0, shake - dt * 14);
 }
 function die(){
+  if (invulnT > 0) return;   // 复活后 1s 无敌：不触发死亡（防落点连环死）
   deaths++; sfx("die"); burst(player.x + 15, player.y + 15, "#ff5d5d");
   deathFx = { x: player.x, y: player.y, grav: curState().grav, t: SHOT ? 3 : 0.45, frame: naiwaFrame };
-  respawn();
+  // 陷阱死提示在死亡当下武装（与旧版即时重开同口径：下一次尝试只显示一次）
+  if (lastDeathTrap && !trapHintEver) trapHintArmed = true;
+  screen = "dying";   // 定格播完 → 死亡面板自选（看广告复活／重玩本关／回主页），不再自动重生
+}
+/* 死亡定格期间：只推进残影/粒子/闪光计时，世界其余冻结；定格播完切到死亡面板 */
+function tickDeath(dt){
+  if (deathFx){
+    deathFx.t -= dt;
+    if (deathFx.t <= 0){ deathFx.t = 0; screen = "dead"; }
+  } else screen = "dead";
+  for (const pt of particles){ pt.x += pt.vx * dt; pt.y += pt.vy * dt; pt.life -= dt; }
+  particles = particles.filter(pt => pt.life > 0);
+  if (flash > 0) flash -= dt;
+  if (denyT > 0) denyT -= dt;
+  if (shake > 0) shake = Math.max(0, shake - dt * 14);
 }
 
 /* ---------------- render ---------------- */
@@ -1910,12 +2034,15 @@ function drawPlayerSkin(cx, feetY, o){
 function draw(){
   const st = curState(), W = CONFIG.viewW, H = CONFIG.viewH;
   ctx.fillStyle = st.sky; ctx.fillRect(0, 0, W, H);
+  const imgBg = screen !== "title" && drawStateBg();   // 状态背景图（标题页维持原样）
   const sx = shake ? (Math.random() - 0.5) * shake : 0;
   const sy = shake ? (Math.random() - 0.5) * shake : 0;
   ctx.save(); ctx.translate(-camX + sx, sy);
-  // far silhouettes
-  ctx.fillStyle = st.far;
-  for (let i = 0; i < 14; i++){ const bx = i * 260 + 40; ctx.fillRect(bx, 300 - (i % 3) * 40, 90, 260); }
+  // far silhouettes（仅回退旧背景时画；图片背景自带远景）
+  if (!imgBg){
+    ctx.fillStyle = st.far;
+    for (let i = 0; i < 14; i++){ const bx = i * 260 + 40; ctx.fillRect(bx, 300 - (i % 3) * 40, 90, 260); }
+  }
   // ratchet zone stripes
   for (const r of ratchetZones()){
     ctx.fillStyle = "rgba(255,92,92,0.06)"; ctx.fillRect(r.x0, 0, r.x1 - r.x0, CONFIG.viewH);
@@ -2035,8 +2162,11 @@ function draw(){
   if (screen !== "title"){
     const S = CONFIG.playerSize;
     const sq = landSquash > 0 ? 1 - 0.25 * Math.sin(Math.PI * (1 - landSquash / 0.13)) : 1;
-    drawPlayerSkin(player.x + S / 2, st.grav > 0 ? player.y + S : player.y,
-      { face: player.vx < 0 ? -1 : 1, gravUp: st.grav < 0, phase: runPhase, airborne: !player.grounded, squash: sq, alpha: 1 });
+    // 死亡定格/面板期间不画活主角（尸体由 deathFx 压扁残影呈现）；复活无敌期闪烁
+    if (screen !== "dying" && screen !== "dead")
+      drawPlayerSkin(player.x + S / 2, st.grav > 0 ? player.y + S : player.y,
+        { face: player.vx < 0 ? -1 : 1, gravUp: st.grav < 0, phase: runPhase, airborne: !player.grounded, squash: sq,
+          alpha: invulnT > 0 ? (Math.floor(performance.now() / 90) % 2 ? 0.3 : 0.85) : 1 });
     if (deathFx){
       drawPlayerSkin(deathFx.x + S / 2, deathFx.grav > 0 ? deathFx.y + S : deathFx.y,
         { face: 1, gravUp: deathFx.grav < 0, phase: Math.PI / 2, airborne: false, squash: 0.22, alpha: 0.95, frame: deathFx.frame });
@@ -2045,6 +2175,18 @@ function draw(){
   // particles
   for (const pt of particles){ ctx.globalAlpha = Math.max(pt.life, 0) * 1.8; ctx.fillStyle = pt.color; ctx.fillRect(pt.x - 3, pt.y - 3, 6, 6); }
   ctx.globalAlpha = 1;
+  // 移位光环脉冲：以玩家为中心扩散（0.35 秒，纯视觉）
+  if (shiftPulse){
+    const age = (performance.now() - shiftPulse.t0) / 1000;
+    if (age > 0.35) shiftPulse = null;
+    else {
+      const k = age / 0.35, S2 = CONFIG.playerSize;
+      ctx.globalAlpha = (1 - k) * 0.9;
+      ctx.strokeStyle = shiftPulse.color; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(player.x + S2 / 2, player.y + S2 / 2, 12 + 40 * k, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
   ctx.restore();
   if (flash > 0){ ctx.fillStyle = "rgba(255,255,255," + (flash * 0.5) + ")"; ctx.fillRect(0, 0, W, H); }
 
@@ -2053,10 +2195,11 @@ function draw(){
     ctx.fillStyle = "#ffd43b"; ctx.font = "bold 26px system-ui"; ctx.textAlign = "center";
     ctx.fillText(evWarn.dir > 0 ? "⚠ 异变！即将强制前移 →" : "⚠ 异变！即将强制后移 ←", W / 2, 192);
   }
-  if (screen === "play" || screen === "clear") drawHUD();
+  if (screen === "play" || screen === "clear" || screen === "dying" || screen === "dead") drawHUD();
   if (screen === "title") drawTitle();
   if (screen === "clear") drawClearOverlay();
   if (screen === "win") drawWin();
+  if (screen === "dead") drawDeathPanel();
   // touch pads
   padL = { x: 16, y: H - 92, w: 196, h: 74 }; padR = { x: W - 212, y: H - 92, w: 196, h: 74 };
   if (screen === "play" && !SHOT){
@@ -2503,12 +2646,88 @@ function drawWin(){
   drawSkinHint(118);
 }
 
+/* ---------------- 死亡面板：自选（看广告复活／重玩本关／回主页） ----------------
+   只由死亡触发（die → 定格 dying → 面板 dead），面板在时 step() 冻结（screen!=="play"
+   直接 return）。与过关浮层同一套视觉：半透明罩＋金色主按钮＋半透明次按钮。
+   deadBtns 由 drawDeathPanel 每帧重建，pointerdown 共用命中。 */
+let deadBtns = [];
+function deathReplay(){
+  // 与旧版自动重生的结果一致：回出生点、保留本关计时/移位累计（respawn 口径）
+  deathFx = null;
+  respawn();
+  screen = "play";
+}
+function doRevive(){
+  revivesUsed++;
+  if (checkpoint){ player.x = checkpoint.x; player.y = checkpoint.y; ring = checkpoint.ring; }
+  else { player.x = level.spawn.x; player.y = level.spawn.y; ring = 0; }
+  player.vx = 0; player.vy = 0; player.grounded = false;
+  shiftCD = 0; coyote = 0; airFlip = true;
+  evWarn = null; groundTime = 0;
+  invulnT = 1.0;            // 1 秒无敌闪烁，防落点连环死
+  deathFx = null;
+  screen = "play";
+}
+async function handleDeath(action){
+  audio();
+  if (action === "revive"){
+    if (revivesUsed >= REVIVE_MAX) return;
+    const ok = await unlockViaAd();       // 真广告优先 / Pages 测试桩，看完才算数
+    if (ok && screen === "dead") doRevive();   // 取消/失败：不复活、留在面板，绝不锁人
+  }
+  else if (action === "replay") deathReplay();
+  else if (action === "home"){ deathFx = null; screen = "title"; titlePanel = null; }
+}
+function drawDeathPanel(){
+  const W = CONFIG.viewW, H = CONFIG.viewH;
+  ctx.fillStyle = "rgba(5,6,16,0.72)"; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ff5d5d"; ctx.font = "bold 54px system-ui";
+  ctx.fillText("被坑了！", W / 2, H / 2 - 78);
+  ctx.fillStyle = "#dfe3ee"; ctx.font = "18px system-ui";
+  ctx.fillText("本关死亡 " + (deaths - levelDeathsStart) + " 次", W / 2, H / 2 - 40);
+  ctx.fillStyle = "#8d99ae"; ctx.font = "14px system-ui";
+  ctx.fillText("按 Shift 或点移位键也可直接重玩", W / 2, H / 2 - 12);
+  deadBtns = [];
+  const canRevive = revivesUsed < REVIVE_MAX;
+  const defs = [
+    { action: "revive", label: canRevive ? "看广告复活" : "本关复活已用完", primary: canRevive, disabled: !canRevive },
+    { action: "replay", label: "重玩本关" },
+    { action: "home",   label: "回主页" }
+  ];
+  const bw = 190, bh = 48, gap = 16, by = H / 2 + 12;
+  const total = bw * defs.length + gap * (defs.length - 1);
+  let bx = (W - total) / 2;
+  ctx.font = "bold 18px system-ui"; ctx.textAlign = "center";
+  for (const d of defs){
+    if (d.disabled){
+      ctx.fillStyle = "rgba(255,255,255,0.05)"; rr(bx, by, bw, bh, 12); ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.12)"; ctx.lineWidth = 1; rr(bx, by, bw, bh, 12); ctx.stroke();
+      ctx.fillStyle = "#5b6478";
+    } else if (d.primary){
+      ctx.fillStyle = "#ffd166"; rr(bx, by, bw, bh, 12); ctx.fill();
+      ctx.fillStyle = "#14142b";
+    } else {
+      ctx.fillStyle = "rgba(255,255,255,0.10)"; rr(bx, by, bw, bh, 12); ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.25)"; ctx.lineWidth = 1; rr(bx, by, bw, bh, 12); ctx.stroke();
+      ctx.fillStyle = "#dfe3ee";
+    }
+    ctx.fillText(d.label, bx + bw / 2, by + 31);
+    deadBtns.push({ x: bx, y: by, w: bw, h: bh, action: d.action, disabled: !!d.disabled });
+    bx += bw + gap;
+  }
+  if (canRevive){
+    ctx.fillStyle = "#8d99ae"; ctx.font = "13px system-ui";
+    ctx.fillText("复活回到最近的安全落点 · 本关还可复活 " + (REVIVE_MAX - revivesUsed) + " 次", W / 2, by + bh + 26);
+  }
+}
+
 /* ---------------- loop ---------------- */
 let last = performance.now();
 let frozen = false; // test-only freeze (set via __game.freeze)
 function frame(now){
   const dt = Math.min((now - last) / 1000, 0.033); last = now;
-  if (!frozen) step(dt);
+  if (!frozen){ if (screen === "dying") tickDeath(dt); else step(dt); }
   draw();
   requestAnimationFrame(frame);
 }
@@ -2530,6 +2749,10 @@ window.__game = {
   get phase(){ return runPhase; },
   get sprite(){ return { ready: naiwaReady, frame: naiwaFrame }; },
   get trap(){ return { rows: trapRows.map(r => ({ x: r.x, p: Math.round(trapProgress(r) * 100) / 100 })), scorch: trapScorch.length, hint: trapHintArmed }; },
+  get revives(){ return revivesUsed; },
+  get checkpoint(){ return checkpoint ? { x: checkpoint.x, y: checkpoint.y, ring: checkpoint.ring } : null; },
+  get invuln(){ return invulnT; },
+  get deadBtns(){ return deadBtns.map(b => ({ action: b.action, disabled: !!b.disabled })); },
   get evDir(){ return evWarn ? evWarn.dir : 0; },
   pressShift, loadLevel: (i) => { loadLevel(i); screen = "play"; },
   // test-only: place the player (auto-run has no stop input; used to exercise the trap kill branch)
