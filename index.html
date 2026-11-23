@@ -1574,7 +1574,8 @@ cv.addEventListener("pointerdown", (e) => {
     if (titlePanel) { titlePanel = null; return; }
     for (const b of uiBtns){
       if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h){
-        if (b.id === "music") { audio(); settings.music = !Music.toggle(); saveSettings(); }
+        if (b.id === "play") startLevel(unlocked);
+        else if (b.id === "music") { audio(); settings.music = !Music.toggle(); saveSettings(); }
         else if (b.id === "sfx") { sfxOn = !sfxOn; settings.sfx = sfxOn; saveSettings(); if (sfxOn) sfx("goal"); }
         else if (b.id === "skins") titlePanel = "skins";
         else if (b.id === "board") titlePanel = "board";
@@ -1596,6 +1597,11 @@ cv.addEventListener("pointerdown", (e) => {
     screen = "title"; titlePanel = "skins";
     return;
   }
+  if (screen === "clear" || screen === "win"){
+    for (const b of navBtns){
+      if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h){ handleNav(b.action); return; }
+    }
+  }
   if (padL && x >= padL.x && x <= padL.x + padL.w && y >= padL.y && y <= padL.y + padL.h) pressShift(-1);
   else if (padR && x >= padR.x && x <= padR.x + padR.w && y >= padR.y && y <= padR.y + padR.h) pressShift(1);
   else if (screen !== "play") pressShift(1);
@@ -1612,7 +1618,7 @@ function burst(x, y, color){
 function overlaps(a, b){ return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
 
 function step(dt){
-  if (screen === "clear") { clearTimer -= dt; if (clearTimer <= 0) { if (levelIdx + 1 > unlocked) { unlocked = Math.min(levelIdx + 1, LEVELS.length - 1); saveUnlock(); } if (levelIdx + 1 < LEVELS.length) { loadLevel(levelIdx + 1); screen = "play"; } else { commitRun(); screen = "win"; } } }
+  // 过关结算停留等玩家点选（下一关/重玩/选关/主页），绝不自动跳下一关
   if (screen !== "play") return;
   runTime += dt; levelTime += dt; attemptTime += dt;
   if (shiftCD > 0) shiftCD -= dt;
@@ -1689,7 +1695,11 @@ function step(dt){
   const g = level.goal;
   if (overlaps({ x: player.x, y: player.y, w: S, h: S }, g)){
     commitLevel();
-    sfx("goal"); screen = "clear"; clearTimer = 1.1;
+    // 解锁落账在过关当下完成：之后点下一关/重玩/选关/主页都不会吞掉已通关进度
+    if (levelIdx + 1 > unlocked) { unlocked = Math.min(levelIdx + 1, LEVELS.length - 1); saveUnlock(); }
+    sfx("goal");
+    if (levelIdx + 1 >= LEVELS.length) { commitRun(); screen = "win"; }   // 最后一关 → 全通关页
+    else screen = "clear";
   }
   tutAdvance();
   if (!(SHOT && deathFx)) camX = Math.max(0, Math.min(level.width - CONFIG.viewW, player.x - 300));
@@ -2021,13 +2031,16 @@ function draw(){
     }
   }
   // player —— 按当前形象分发（小点＝原版方块／奶蛙＝精灵，碰撞盒仍是原 30px）
-  const S = CONFIG.playerSize;
-  const sq = landSquash > 0 ? 1 - 0.25 * Math.sin(Math.PI * (1 - landSquash / 0.13)) : 1;
-  drawPlayerSkin(player.x + S / 2, st.grav > 0 ? player.y + S : player.y,
-    { face: player.vx < 0 ? -1 : 1, gravUp: st.grav < 0, phase: runPhase, airborne: !player.grounded, squash: sq, alpha: 1 });
-  if (deathFx){
-    drawPlayerSkin(deathFx.x + S / 2, deathFx.grav > 0 ? deathFx.y + S : deathFx.y,
-      { face: 1, gravUp: deathFx.grav < 0, phase: Math.PI / 2, airborne: false, squash: 0.22, alpha: 0.95, frame: deathFx.frame });
+  // 标题页不画世界里的主角：标题底色是半透明罩，出生点的主角会透出来贴在选关格边缘（残影），标题形象只走 drawTitle 的预览
+  if (screen !== "title"){
+    const S = CONFIG.playerSize;
+    const sq = landSquash > 0 ? 1 - 0.25 * Math.sin(Math.PI * (1 - landSquash / 0.13)) : 1;
+    drawPlayerSkin(player.x + S / 2, st.grav > 0 ? player.y + S : player.y,
+      { face: player.vx < 0 ? -1 : 1, gravUp: st.grav < 0, phase: runPhase, airborne: !player.grounded, squash: sq, alpha: 1 });
+    if (deathFx){
+      drawPlayerSkin(deathFx.x + S / 2, deathFx.grav > 0 ? deathFx.y + S : deathFx.y,
+        { face: 1, gravUp: deathFx.grav < 0, phase: Math.PI / 2, airborne: false, squash: 0.22, alpha: 0.95, frame: deathFx.frame });
+    }
   }
   // particles
   for (const pt of particles){ ctx.globalAlpha = Math.max(pt.life, 0) * 1.8; ctx.fillStyle = pt.color; ctx.fillRect(pt.x - 3, pt.y - 3, 6, 6); }
@@ -2042,7 +2055,7 @@ function draw(){
   }
   if (screen === "play" || screen === "clear") drawHUD();
   if (screen === "title") drawTitle();
-  if (screen === "clear"){ centerText("过关！", achToast, "#51cf66"); drawSkinHint(58); }
+  if (screen === "clear") drawClearOverlay();
   if (screen === "win") drawWin();
   // touch pads
   padL = { x: 16, y: H - 92, w: 196, h: 74 }; padR = { x: W - 212, y: H - 92, w: 196, h: 74 };
@@ -2116,25 +2129,51 @@ function drawTitle(){
   const W = CONFIG.viewW, H = CONFIG.viewH;
   ctx.fillStyle = "rgba(5,6,16,0.78)"; ctx.fillRect(0, 0, W, H);
   ctx.textAlign = "center";
-  ctx.fillStyle = "#ffd166"; ctx.font = "bold 76px system-ui";
-  ctx.fillText("这关有坑", W / 2, 168);
-  // 选关按钮，三行 × 10（命中区与 pointerdown 共用 titleBtns）
+  ctx.fillStyle = "#ffd166"; ctx.font = "bold 60px system-ui";
+  ctx.fillText("这关有坑", W / 2, 78);
+  // 当前形象预览（与形象页同口径：小点弹跳／奶蛙跑步帧循环，穿搭合成一并呈现）
+  const now = performance.now();
+  const baseY = 168;
+  ctx.strokeStyle = "rgba(255,255,255,0.14)"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(330, baseY); ctx.lineTo(630, baseY); ctx.stroke();
+  if (skins.current === "frog"){
+    if (naiwaReady) drawFrogStackAt(480, baseY, 84, NAIWA_LOOP[Math.floor(now / 95) % NAIWA_LOOP.length]);
+    else drawFrog(480, baseY, { face: 1, gravUp: false, phase: now / 16, airborne: false, squash: 1, alpha: 1 });
+  } else {
+    const b = Math.abs(Math.sin(now / 300)) * 9, S2 = 50;
+    ctx.fillStyle = curState().player;
+    rr(480 - S2 / 2, baseY - S2 - b, S2, S2, 12); ctx.fill();
+    ctx.fillStyle = "#14142b";
+    ctx.beginPath(); ctx.arc(480 + 8, baseY - S2 - b + 18, 5.5, 0, Math.PI * 2); ctx.fill();
+  }
+  const curSkin = SKIN_DEFS.find(d => d.id === skins.current);
+  ctx.fillStyle = "#8d99ae"; ctx.font = "13px system-ui";
+  ctx.fillText("当前形象：" + (curSkin ? curSkin.name : ""), W / 2, 192);
+  // 主行动：一个大按钮，文案随进度（新档＝开始游戏，有进度＝继续第 N 关）
+  uiBtns = [];
+  const playLabel = unlocked === 0 ? "开始游戏" : "继续第 " + (unlocked + 1) + " 关";
+  ctx.fillStyle = "#ffd166"; rr(315, 206, 330, 50, 14); ctx.fill();
+  ctx.fillStyle = "#14142b"; ctx.font = "bold 21px system-ui";
+  ctx.fillText(playLabel, W / 2, 239);
+  uiBtns.push({ x: 315, y: 206, w: 330, h: 50, id: "play" });
+  // 进度摘要：已通关按纪录落账数；死亡是游戏唯一的死亡计数（本轮，标题回落即此数）
+  const cleared = records.lv.filter(r => r && r.t !== null && r.t !== undefined).length;
+  ctx.fillStyle = "#aeb6cc"; ctx.font = "14px system-ui";
+  ctx.fillText("已通关 " + cleared + "/" + LEVELS.length + " · 累计死亡 " + deaths, W / 2, 280);
+  // 选关按钮，三行 × 10，紧凑对齐（命中区与 pointerdown 共用 titleBtns）
   titleBtns = [];
-  const bw = 76, bh = 48, gap = 10, per = 10;
+  const bw = 76, bh = 38, gap = 10, per = 10;
   const rowW = bw * per + gap * (per - 1), bx0 = (W - rowW) / 2;
   for (let i = 0; i < LEVELS.length; i++){
-    const bx = bx0 + (i % per) * (bw + gap), by = 232 + Math.floor(i / per) * 62;
+    const bx = bx0 + (i % per) * (bw + gap), by = 296 + Math.floor(i / per) * 46;
     titleBtns.push({ x: bx, y: by, w: bw, h: bh, i });
     const open = i <= unlocked;
     ctx.fillStyle = open ? "#ffd166" : "rgba(255,255,255,0.10)";
-    rr(bx, by, bw, bh, 10); ctx.fill();
-    ctx.fillStyle = open ? "#14142b" : "#8d99ae"; ctx.font = "bold 20px system-ui";
-    ctx.fillText(open ? String(i + 1) : "🔒", bx + bw / 2, by + 32);
+    rr(bx, by, bw, bh, 9); ctx.fill();
+    ctx.fillStyle = open ? "#14142b" : "#8d99ae"; ctx.font = "bold 17px system-ui";
+    ctx.fillText(open ? String(i + 1) : "🔒", bx + bw / 2, by + 26);
   }
-  ctx.fillStyle = "#aeb6cc"; ctx.font = "16px system-ui";
-  ctx.fillText("点任意处开始", W / 2, 476);
-  // 底部一行：音乐/音效开关与排行榜/成就入口（uiBtns 与 pointerdown 共用）
-  uiBtns = [];
+  // 底部一行：音乐/音效开关与形象/排行榜/成就入口（几何沿旧版，uiBtns 与 pointerdown 共用）
   const items = [
     { id: "music", label: "音乐 " + (settings.music ? "开" : "关"), x: 120 },
     { id: "sfx",   label: "音效 " + (sfxOn ? "开" : "关"),          x: 300 },
@@ -2147,7 +2186,14 @@ function drawTitle(){
     uiBtns.push({ x: it.x - 70, y: 484, w: 140, h: 38, id: it.id });
     ctx.fillStyle = "#8d99ae";
     ctx.fillText(it.label, it.x, 508);
+    // 形象入口提示点：还有未解锁的形象/穿搭时亮起
+    if (it.id === "skins" && (!skins.unlocked.includes("frog") || skins.unlockedOutfits.length < OUTFIT_DEFS.length)){
+      const tw = ctx.measureText(it.label).width;
+      ctx.fillStyle = "#ffd166";
+      ctx.beginPath(); ctx.arc(it.x + tw / 2 + 11, 494, 4.5, 0, Math.PI * 2); ctx.fill();
+    }
   }
+  navBtns = [];
   if (titlePanel === "board") drawBoard();
   if (titlePanel === "ach") drawAchPanel();
   if (titlePanel === "skins") drawSkinsPanel();
@@ -2373,6 +2419,53 @@ function handleSkinClick(x, y){
     return;
   }
 }
+/* ---------------- 过关结算 / 全通关页：按钮点选（不自动跳转） ----------------
+   navBtns 由 drawClearOverlay / drawWin 每帧重建，pointerdown 共用命中。
+   下一关/重玩走 loadLevel（本轮计时/死亡/移位累计不重置，与旧自动流程同口径）；
+   选关与主页都回标题页（选关区就在标题页上）。 */
+let navBtns = [];
+function handleNav(action){
+  audio();
+  if (action === "next"){ loadLevel(levelIdx + 1); screen = "play"; Music.start(); }
+  else if (action === "replay"){ loadLevel(levelIdx); screen = "play"; Music.start(); }
+  else { screen = "title"; titlePanel = null; }
+}
+function drawNavBtns(defs, by, bw, bh, gap){
+  const W = CONFIG.viewW;
+  const total = bw * defs.length + gap * (defs.length - 1);
+  let bx = (W - total) / 2;
+  ctx.font = "bold 18px system-ui"; ctx.textAlign = "center";
+  for (const d of defs){
+    ctx.fillStyle = d.primary ? "#ffd166" : "rgba(255,255,255,0.10)";
+    rr(bx, by, bw, bh, 12); ctx.fill();
+    if (!d.primary){ ctx.strokeStyle = "rgba(255,255,255,0.25)"; ctx.lineWidth = 1; rr(bx, by, bw, bh, 12); ctx.stroke(); }
+    ctx.fillStyle = d.primary ? "#14142b" : "#dfe3ee";
+    ctx.fillText(d.label, bx + bw / 2, by + 31);
+    navBtns.push({ x: bx, y: by, w: bw, h: bh, action: d.action });
+    bx += bw + gap;
+  }
+}
+function drawClearOverlay(){
+  const W = CONFIG.viewW, H = CONFIG.viewH;
+  ctx.fillStyle = "rgba(5,6,16,0.72)"; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#51cf66"; ctx.font = "bold 54px system-ui";
+  ctx.fillText("过关！", W / 2, H / 2 - 78);
+  ctx.fillStyle = "#dfe3ee"; ctx.font = "18px system-ui";
+  ctx.fillText("本关用时 " + levelTime.toFixed(1) + " 秒 · 移位 " + levelShifts + " 次 · 死亡 " + deaths + " 次", W / 2, H / 2 - 40);
+  if (achToast){
+    ctx.fillStyle = "#ffd166"; ctx.font = "16px system-ui";
+    ctx.fillText(achToast, W / 2, H / 2 - 12);
+  }
+  navBtns = [];
+  drawNavBtns([
+    { action: "next",   label: "下一关", primary: true },
+    { action: "replay", label: "重玩本关" },
+    { action: "select", label: "选关" },
+    { action: "home",   label: "主页" }
+  ], H / 2 + 12, 150, 48, 14);
+  drawSkinHint(96);
+}
 /* 结算页小字入口（奶蛙未解锁才显示，纯点击触发，绝不自动弹） */
 let skinHintBtn = null;
 function drawSkinHint(dy){
@@ -2401,8 +2494,12 @@ function drawWin(){
     ctx.fillStyle = "#ffd166"; ctx.font = "16px system-ui";
     ctx.fillText(achToast, W / 2, 306);
   }
-  ctx.fillStyle = "#8d99ae"; ctx.font = "15px system-ui";
-  ctx.fillText("点任意处回到标题", W / 2, 362);
+  navBtns = [];
+  drawNavBtns([
+    { action: "replay", label: "重玩本关", primary: true },
+    { action: "select", label: "选关" },
+    { action: "home",   label: "主页" }
+  ], 322, 170, 48, 16);
   drawSkinHint(118);
 }
 
