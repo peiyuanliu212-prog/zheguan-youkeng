@@ -71,6 +71,7 @@ const LEVELS = [
      失败轨迹：零输入→680 处坠落；只按 [450,+1]→1500 处坠落。 */
   {
     name: "第 1 关 · 移位大地",
+    budget: 6,
     width: 3300, spawn: { x: 60, y: 400 },
     hint: "你自己会跑。点「前移」让世界向前移，点「后移」让世界退回来。",
     platforms: [
@@ -97,6 +98,7 @@ const LEVELS = [
      失败轨迹：只翻上去不换台→1060 处撞倒挂刺；[2000,-1] 代替 [2000,+1]→升空出界。 */
   {
     name: "第 2 关 · 移位天空",
+    budget: 9,
     width: 3660, spawn: { x: 60, y: 400 },
     hint: "地板到头了。连移两次翻转重力，去天花板上跑。",
     platforms: [
@@ -121,6 +123,7 @@ const LEVELS = [
      失败轨迹：[1060,-1]→升空出界；末段 [2860,-1] 代替 +1→坠入天花板下的坑。 */
   {
     name: "第 3 关 · 错峰",
+    budget: 8,
     width: 4200, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -145,6 +148,7 @@ const LEVELS = [
      失败轨迹：[2200,-1] 慌按→2300 处 A 刺变真被扎死；零输入→1500 处坠落。 */
   {
     name: "第 4 关 · 棘轮",
+    budget: 6,
     width: 4050, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -171,6 +175,7 @@ const LEVELS = [
      失败轨迹：[1200,+1] 熟悉的换台→1420 后升空出界；不躲刺→1300 处被扎死。 */
   {
     name: "第 5 关 · 回廊",
+    budget: 9,
     width: 3850, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -197,6 +202,7 @@ const LEVELS = [
      失败轨迹：台下 [2400,+1] 提前翻重力→坠坑；入口 [2050,+1] 代替两次后移→升空出界。 */
   {
     name: "第 6 关 · 交织",
+    budget: 10,
     width: 3750, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -222,6 +228,7 @@ const LEVELS = [
      失败轨迹：只翻上去不下来→1250 后升空出界；不躲刺→2050 处被扎死。 */
   {
     name: "第 7 关 · 浮岛",
+    budget: 11,
     width: 4350, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -248,6 +255,7 @@ const LEVELS = [
      失败轨迹：不下天花板→1200 处被倒挂刺扎死；坑前 [2050,+1] 慌翻→升空出界。 */
   {
     name: "第 8 关 · 双棘",
+    budget: 7,
     width: 3900, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -277,6 +285,7 @@ const LEVELS = [
        躲刺用 [3250,-1] 往下掉→未脱离刺带即被扎死（实测 x=3278），且翻转额度已花、空中无路可回。 */
   {
     name: "第 9 关 · 巡针",
+    budget: 10,
     width: 4450, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -303,6 +312,7 @@ const LEVELS = [
      失败轨迹：不换台→1500 后升空出界；[2100,+1] 抢早下落→落在窄台前的坑里。 */
   {
     name: "第 10 关 · 试炼",
+    budget: 10,
     width: 3750, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -330,6 +340,7 @@ const LEVELS = [
        桥二前走天花板「聪明路」（+1 上天再 -1 落回，全程不离 B 相位）→桥已碎、坠坑。 */
   {
     name: "第 11 关 · 疾风",
+    budget: 11,
     width: 4700, spawn: { x: 60, y: 400 },
     hint: "加速区里跑得快，移位的间隔也跟着变长。",
     platforms: [
@@ -363,6 +374,7 @@ const LEVELS = [
      失败轨迹：零输入→死于一区 A 刺 1300；第二区前 B 刺往下躲→死于二区 A 刺 3300（区内无法移位）。 */
   {
     name: "第 12 关 · 凝滞",
+    budget: 7,
     width: 4900, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -394,6 +406,7 @@ const LEVELS = [
        越线后赖在黄昏里→死于印记刺 2700。 */
   {
     name: "第 13 关 · 巡回",
+    budget: 11,
     width: 4800, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -425,6 +438,7 @@ const LEVELS = [
        越线后赖在黄昏→死于印记刺 2900。 */
   {
     name: "第 14 关 · 颠倒",
+    budget: 11,
     width: 5000, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -455,6 +469,7 @@ const LEVELS = [
        第二次异变前抢按 +1→被强制后移打回黎明、B 桥消失坠坑。 */
   {
     name: "第 15 关 · 异变",
+    budget: 9,
     width: 5100, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -491,6 +506,8 @@ const LEVELS = [
        第二段里多做一对「虚切」→总次数变 7，死于第四根联动刺 4700。 */
   {
     name: "第 16 关 · 绝壁",
+    budget: 9,
+    gates: [{ x: 4400, need: 1 }],
     width: 5200, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -523,6 +540,7 @@ const LEVELS = [
        影子刺前手痒 +1→影子变真、死于 2950。 */
   {
     name: "第 17 关 · 连环",
+    budget: 9,
     width: 5200, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -555,6 +573,7 @@ const LEVELS = [
        二区里 B 刺前想后移→被拒绝、死于 3700。 */
   {
     name: "第 18 关 · 逆鳞",
+    budget: 10,
     width: 5300, spawn: { x: 60, y: 400 },
     hint: "",
     ratchet: { x0: 900, x1: 2300 },
@@ -583,7 +602,7 @@ const LEVELS = [
        把「气」续上；回声区里你按下的那一下，1 秒多后还会回来改一次世界：
        刚躲过的刺会被它反成另一副面孔等你。
      合法操作序列：[1080,+1] 地面换组 → [1140,+1] 落坑沿空中翻上（耗气）
-       → 吃珠续气 → [1220,+1] 换组 → [1420,+1] 空中再翻落回对岸
+       → 吃珠续气 → [1220,+1] 换组 → [1390,+1] 空中再翻落回对岸
        → [2500,+1] 回声区内换组躲第一根回声刺（1.2 秒后回声把第二根反成影子）
        → [3800,-1][4150,+1][4350,-1] 正常躲三刺
        → [4650,+1] 第二回声区内换组，回声随后把末刺反成影子通过。
@@ -591,6 +610,7 @@ const LEVELS = [
        回声区里躲完第一根又手痒 -1 退回→第二根被回声反成实的、死于 3050。 */
   {
     name: "第 19 关 · 回气",
+    budget: 13,
     width: 5600, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -629,6 +649,7 @@ const LEVELS = [
        第二区换组太迟（2620 才按）→回声没赶上、死于末刺 2850。 */
   {
     name: "第 20 关 · 无间",
+    budget: 9,
     width: 5600, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -670,6 +691,7 @@ const LEVELS = [
        刺对前 +1 换去虚空找轨→无轨升空出界。 */
   {
     name: "第 21 关 · 试炼场",
+    budget: 12,
     width: 7200, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -714,6 +736,7 @@ const LEVELS = [
        坑二在边沿就抢翻（3920）→够不着珠二、无气可翻、升空出界。 */
   {
     name: "第 22 关 · 双生劫",
+    budget: 13,
     width: 7500, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -749,7 +772,7 @@ const LEVELS = [
        坑一翻上 → [1820,+1] 空中换组、擦过回气珠（1875,330）
        → [1950,+1] 靠珠子续的气翻回落对岸 → [2650,+1][3000,-1]
        躲 A/B 刺（2400 的 B 刺在黎明里是影子、不按） → [3320,+1]
-       [3420,-1] 60px 刺对连换两组 → [3560,+1] 坑二边沿先换组
+       [3440,-1] 60px 刺对连换两组 → [3560,+1] 坑二边沿先换组
        → [3660,+1] 翻上、贴住中层台底面回气（台下 A 倒挂刺在夜幕
        里是影子） → [4250,-1] 台尾翻回落地面（着陆环＝黄昏） → [4950,-1] 躲 B 刺
        [5300,+1][5650,-1] 针阵余刺（4700 的 A 刺在黄昏里是影子、不按） → [5960,+1] 坑三边沿换组
@@ -760,6 +783,7 @@ const LEVELS = [
        坑三以为 B 中层台会接住自己（黎明里它不存在）→直坠坑底。 */
   {
     name: "第 23 关 · 千针阵",
+    budget: 26,
     width: 7900, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -808,6 +832,8 @@ const LEVELS = [
        终局刺对前不虚切→死于刺对第一根 5750。 */
   {
     name: "第 24 关 · 逆鳞甲",
+    budget: 19,
+    gates: [{ x: 6350, need: 1 }],
     width: 8100, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -856,6 +882,7 @@ const LEVELS = [
        走天花板路线不换组→死于 B 倒挂刺 2100。 */
   {
     name: "第 25 关 · 修罗",
+    budget: 16,
     width: 7400, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -911,6 +938,7 @@ const LEVELS = [
        致命相位、死于 700；联动刺对只跳一次→计数差两格、死于第二根 5500。 */
   {
     name: "第 26 关 · 炼狱门",
+    budget: 19,
     width: 7600, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -964,6 +992,7 @@ const LEVELS = [
        坑二从天轨提前翻下落上地面岛→走下岛坠坑。 */
   {
     name: "第 27 关 · 九死",
+    budget: 22,
     width: 8400, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -1016,6 +1045,7 @@ const LEVELS = [
        喂醒、死于第一根 4800。 */
   {
     name: "第 28 关 · 无间道",
+    budget: 13,
     width: 7240, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -1071,6 +1101,8 @@ const LEVELS = [
        异变后按 -1 撤回→落回地面正撞 B 刺、死于 5750。 */
   {
     name: "第 29 关 · 轮回",
+    budget: 15,
+    gates: [{ x: 6550, need: 2 }],
     width: 8100, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -1125,6 +1157,8 @@ const LEVELS = [
        走廊里按 -1 回头→翻上天、死于升空出界。 */
   {
     name: "第 30 关 · 地狱",
+    budget: 16,
+    gates: [{ x: 4450, need: 0 }, { x: 4850, need: 1 }, { x: 5250, need: 2 }, { x: 6050, need: 0 }],
     width: 8400, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -1167,6 +1201,7 @@ const LEVELS = [
     /* 展示关（本批新增，排在最后）：单带巡逻刺守地面 → 两颗计时相位刺错峰
        → 一颗联动相位刺收尾。天轨只铺到第二段末，收尾段必须在地面解决。 */
     name: "试炼 · 相位",
+    budget: 6,
     width: 4200, spawn: { x: 60, y: 400 },
     hint: "",
     platforms: [
@@ -1839,6 +1874,7 @@ function spikeActive(s){
 function resetRun(){
   ring = 0; shiftCD = 0; coyote = 0; airFlip = true;
   bufDir = 0; bufFxT = 0; rejFxT = 0;
+  budgetUsed = 0; denyReason = ""; deathCause = ""; gateFlash = 0; gateFail = null; gatePassFx = 0;
   attemptTime = 0; linkShiftCount = 0;
   evWarn = null; evDone = {}; orbTaken = {};
   phasePrev = (level.phases || []).map(p => phaseOf(p)); phasePulse = (level.phases || []).map(() => 0);
@@ -1867,6 +1903,7 @@ function respawn(){
 }
 
 let denyT = 0; // ratchet deny feedback timer
+let denyReason = ""; // "lock" 锁定／"ratchet" 棘轮／"budget" 预算耗尽（决定 HUD 拒绝文案）
 let shiftCD = 0; // 移位冷却（秒）：防连切悬浮/穿刺——切档后 0.4s 内再切无效
 /* —— 输入缓冲（第0批定案）：冷却结束前 100ms 内按下的方向缓存一格，冷却一结束
    立即按「执行当刻」的规则判定执行（凝滞/棘轮/滞空额度在执行时复查）；最多缓存
@@ -2020,6 +2057,21 @@ function moverPos(m){
    指示点标出轮转位置——考的是状态规划，不是猜。 */
 let linkShiftCount = 0;              // 本 attempt 内玩家成功移位次数（联动相位刺的时钟）
 let phasePrev = [], phasePulse = []; // 每刺上一帧相位 / 相位推进脉冲剩余秒
+/* —— 移位预算（主人 2026-11-24 定版）：正式关 1–30 与试炼关（idx31）设 level.budget，
+   序章（idx0）不设。标定＝最少移位＋4。
+   计数口径：只计玩家主动按出的成功移位（含输入缓冲兑现的那一按）；异变强制移位不计；
+   联动刺的 linkShiftCount 口径不动（各算各的）。预算耗尽后按键直接用现有拒绝反馈
+   （抖动＋✕）挡掉，不判死、不锁面板；复活回到检查点时刻的已用次数快照；重玩本关
+   已用清零；护盾抵命不退不加。纯局内量，不进存档（存档结构不变）。 */
+let budgetUsed = 0;                  // 本 attempt 已用的主动成功移位次数
+function budgetMax(){ return typeof level.budget === "number" ? level.budget : Infinity; }
+function budgetLeft(){ const m = budgetMax(); return m === Infinity ? Infinity : Math.max(0, m - budgetUsed); }
+/* 对账门（只进 16/24/29/30）：玩家越过门 x 的瞬间，已用次数 %4 ≠ need → 判死。
+   死因与普通死亡区分：红闪＋「账对不上」。 */
+let deathCause = "";                 // "" | "gate"
+let gateFlash = 0;                   // 对账失败红闪剩余秒
+let gateFail = null;                 // 最近一次对账失败 {need, used, x}
+let gatePassFx = 0;                  // 对账通过的一次性白光（0.5s）
 function phaseOf(p){
   if (p.link) return (((p.offset || 0) + linkShiftCount) % 4 + 4) % 4;
   const per = p.period || 2.5;
@@ -2039,28 +2091,36 @@ function forceShift(dir){
    ring only moves forward — backshift is denied (with feedback). */
 function shift(dir){
   if (shiftCD > 0) return;
+  if (budgetUsed >= budgetMax()){
+    // 预算耗尽：按键直接拒绝（沿用现有拒绝反馈：抖动＋✕），不判死、不锁面板
+    denyT = 1.0; denyReason = "budget"; shake = Math.max(shake, 4); sfx("deny");
+    return;
+  }
   if (inLock()){
-    denyT = 1.0; shake = Math.max(shake, 4); sfx("deny");
+    denyT = 1.0; denyReason = "lock"; shake = Math.max(shake, 4); sfx("deny");
     return;
   }
   if (dir < 0 && inRatchet()){
-    denyT = 1.0; shake = Math.max(shake, 4); sfx("deny");
+    denyT = 1.0; denyReason = "ratchet"; shake = Math.max(shake, 4); sfx("deny");
     return;
   }
   const next = (ring + dir + CONFIG.states.length) % CONFIG.states.length;
   const gravFlip = CONFIG.states[next].grav !== curState().grav;
   if (gravFlip && !player.grounded && coyote <= 0 && !airFlip){
-    denyT = 1.0; shake = Math.max(shake, 4); sfx("deny");
+    denyT = 1.0; denyReason = "air"; shake = Math.max(shake, 4); sfx("deny");
     return;
   }
   const prevPlat = curState().plat;
   ring = next;
   linkShiftCount++;   // 联动相位刺：玩家每次成功移位，它的相位进一格
+  budgetUsed++;       // 移位预算：只计玩家主动按出的成功移位（forceShift 不计）
+  denyReason = "";
   if (gravFlip) airFlip = false;
   // 移位陷阱：陷阱区内发生平台组切换（A↔B）即触发「落点生刺」
   if (level.trap && curState().plat !== prevPlat && player.x >= level.trap.x0 && player.x <= level.trap.x1) trapTrigger();
   shiftCD = 0.4;
   runShifts++; levelShifts++;
+  if (window.FX) FX.spawn("shift", player.x + 15 - camX, player.y + 15);   // FX：移位粒子
   // 回声·环境版：标记区内成功移位 → 延迟翻转该区机关（只改机关，不改玩家相位）
   for (const z of level.echoes || [])
     if (player.x >= z.x0 && player.x <= z.x1) echoQueue.push({ at: attemptTime + (z.delay || 1.5), id: z.id });
@@ -2227,6 +2287,7 @@ function step(dt){
   // 过关结算停留等玩家点选（下一关/重玩/选关/主页），绝不自动跳下一关
   if (screen !== "play") return;
   if (shieldBusy) return;   // 领护盾广告流程中：世界冻结，广告回来再继续
+  if (deathCause && screen === "play") deathCause = "";   // 死因只在死亡当帧有效（护盾抵命后自动清）
   runTime += dt; levelTime += dt; attemptTime += dt; shieldOfferT += dt;
   if (shiftCD > 0) shiftCD -= dt;
   // 输入缓冲兑现：冷却刚结束且有缓存 → 立即执行（shift 内部按当刻规则复查）
@@ -2263,6 +2324,7 @@ function step(dt){
   // (Solid AABB sides pin the player on platform corners at state seams —
   //  see BUG_LOG 2026-11-21. Swept landing on the gravity-facing surface only.)
   const prevY = player.y;
+  const prevX = player.x;
   player.x += player.vx * dt;
   player.y += player.vy * dt;
   player.grounded = false;
@@ -2278,6 +2340,20 @@ function step(dt){
     }
   }
   if (player.grounded) { coyote = 0.12; airFlip = true; } else coyote -= dt;
+  // —— 对账门（只进 16/24/29/30）：越过门 x 的瞬间对账 ——
+  // 已用次数 %4 必须等于门的 need；不对＝当场判死（红闪＋「账对不上」），
+  // 与普通扎死/坠落区分开。放在扎刺判定之前：门先开口，别让后面的刺抢死因。
+  for (const g of level.gates || []){
+    if (prevX < g.x && player.x >= g.x){
+      if (((budgetUsed % 4) + 4) % 4 !== g.need){
+        deathCause = "gate";
+        gateFail = { need: g.need, used: budgetUsed, x: g.x };
+        gateFlash = 0.6;
+        die(); return;
+      }
+      gatePassFx = 0.5;
+    }
+  }
   // 安全检查点计时：连续着地时间（记录动作在全机关卡判定之后，见下方 goal 前）
   if (player.grounded) groundTime += dt; else groundTime = 0;
   if (invulnT > 0) invulnT -= dt;
@@ -2357,7 +2433,7 @@ function step(dt){
   // 的最后位置＋当时 ring；压着陷阱刺排或与活刺/巡逻刺重叠的位置不记（不把死点记成安全点）。
   // 历史表每前进 ≥40px 或换 ring 追加一条（复活选点回退用），上限 60 条。
   if (player.grounded && groundTime >= 0.3 && !trapRowOverlap() && !spikeOverlap()){
-    checkpoint = { x: player.x, y: player.y, ring };
+    checkpoint = { x: player.x, y: player.y, ring, used: budgetUsed };   // 快照含已用预算次数
     const lastCp = checkpoints[checkpoints.length - 1];
     if (!lastCp || lastCp.ring !== ring || Math.abs(checkpoint.x - lastCp.x) >= 40){
       checkpoints.push(checkpoint);
@@ -2371,6 +2447,7 @@ function step(dt){
     // 解锁落账在过关当下完成：之后点下一关/重玩/选关/主页都不会吞掉已通关进度
     if (levelIdx + 1 > unlocked) { unlocked = Math.min(levelIdx + 1, LEVELS.length - 1); saveUnlock(); }
     sfx("goal");
+    if (window.FX) FX.spawn("clear", g.x + g.w / 2 - camX, g.y + g.h / 2);   // FX：通关光效
     if (levelIdx + 1 >= LEVELS.length) { commitRun(); screen = "win"; }   // 最后一关 → 全通关页
     else screen = "clear";
   }
@@ -2388,6 +2465,8 @@ function step(dt){
   if (trapHintArmed) trapHintEver = true;
   if (flash > 0) flash -= dt;
   if (denyT > 0) denyT -= dt;
+  if (gateFlash > 0) gateFlash -= dt;
+  if (gatePassFx > 0) gatePassFx -= dt;
   if (shake > 0) shake = Math.max(0, shake - dt * 14);
 }
 function die(){
@@ -2396,12 +2475,14 @@ function die(){
     // 护盾抵命：不死亡、不计死亡数——消耗护盾＋1.5s 无敌闪烁＋碎盾金环，继续跑；
     // 本局那 1 次广告复活不受影响（还没死过）。陷阱死标记一并清掉，别误武装提示。
     shield = false; lastDeathTrap = false;
+    gateFail = null; deathCause = ""; gateFlash = 0;
     invulnT = 1.5; shieldFxT = 0.5;
     burst(player.x + 15, player.y + 15, "#ffd166");
     sfx("goal");
     return;
   }
   deaths++; runDeaths++; sfx("die"); burst(player.x + 15, player.y + 15, "#ff5d5d");
+  if (window.FX) FX.spawn("die", player.x + 15 - camX, Math.min(player.y + 30, 505));   // FX：死亡爆点（坠落死钳回画面内）
   deathFx = { x: player.x, y: player.y, grav: curState().grav, t: SHOT ? 3 : 0.45, frame: naiwaFrame };
   // 陷阱死提示在死亡当下武装（与旧版即时重开同口径：下一次尝试只显示一次）
   if (lastDeathTrap && !trapHintEver) trapHintArmed = true;
@@ -2417,6 +2498,7 @@ function tickDeath(dt){
   particles = particles.filter(pt => pt.life > 0);
   if (flash > 0) flash -= dt;
   if (denyT > 0) denyT -= dt;
+  if (gateFlash > 0) gateFlash -= dt;
   if (shake > 0) shake = Math.max(0, shake - dt * 14);
 }
 
@@ -2578,6 +2660,34 @@ function draw(){
     ctx.fillStyle = "rgba(255,212,59,0.05)"; ctx.fillRect(r.x0, 0, r.x1 - r.x0, CONFIG.viewH);
     ctx.fillStyle = "rgba(255,220,100,0.85)"; ctx.font = "bold 15px system-ui"; ctx.textAlign = "left";
     ctx.fillText("» 加速区", r.x0 + 12, 90);
+  }
+  // 对账门（纯视觉）：全高半透明光墙＋门顶的 need 数字（≡n）。判定在 step 里。
+  for (const g of level.gates || []){
+    const tp = performance.now() / 1000, pulse = 0.5 + 0.5 * Math.sin(tp * 2.4);
+    const grd = ctx.createLinearGradient(g.x - 12, 0, g.x + 12, 0);
+    grd.addColorStop(0, "rgba(120,220,255,0)");
+    grd.addColorStop(0.5, "rgba(150,230,255," + (0.26 + 0.16 * pulse).toFixed(3) + ")");
+    grd.addColorStop(1, "rgba(120,220,255,0)");
+    ctx.fillStyle = grd; ctx.fillRect(g.x - 12, 0, 24, CONFIG.viewH);
+    ctx.fillStyle = "rgba(150,230,255," + (0.06 + 0.05 * pulse).toFixed(3) + ")";
+    ctx.fillRect(g.x - 2, 0, 4, CONFIG.viewH);
+    ctx.fillStyle = "rgba(190,245,255," + (0.35 + 0.35 * pulse).toFixed(2) + ")";
+    ctx.fillRect(g.x - 1, 0, 2, CONFIG.viewH);
+    // 门顶徽章：≡n
+    ctx.beginPath(); ctx.arc(g.x, 300, 20, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(6,20,32,0.72)"; ctx.fill();
+    ctx.strokeStyle = "rgba(170,235,255," + (0.55 + 0.35 * pulse).toFixed(2) + ")"; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = "rgba(215,248,255,0.95)"; ctx.font = "bold 16px system-ui"; ctx.textAlign = "center";
+    ctx.fillText("≡" + g.need, g.x, 306);
+    // 小字：你是几（只在贴脸时显示，别和徽章糊在一起）
+    if (Math.abs(g.x - player.x) < 260){
+      ctx.fillStyle = "rgba(200,240,255,0.80)"; ctx.font = "bold 11px system-ui";
+      ctx.fillText("你是 ≡" + (((budgetUsed % 4) + 4) % 4), g.x, 348);
+    }
+    if (gatePassFx > 0 && Math.abs(g.x - player.x) < 40){
+      ctx.fillStyle = "rgba(255,255,255," + (gatePassFx * 0.5).toFixed(2) + ")";
+      ctx.fillRect(g.x - 6, 0, 12, CONFIG.viewH);
+    }
   }
   // ghost (inactive) platforms first
   for (const p of level.platforms){
@@ -2838,6 +2948,8 @@ function draw(){
   }
   ctx.restore();
   if (flash > 0){ ctx.fillStyle = "rgba(255,255,255," + (flash * 0.5) + ")"; ctx.fillRect(0, 0, W, H); }
+  // 对账失败：整屏红闪（与普通死亡的白闪/无闪区分开）
+  if (gateFlash > 0){ ctx.fillStyle = "rgba(255,38,52," + Math.min(0.55, gateFlash * 0.9) + ")"; ctx.fillRect(0, 0, W, H); }
 
   if (evWarn && screen === "play"){
     ctx.fillStyle = "rgba(20,10,0,0.45)"; ctx.fillRect(0, 150, W, 64);
@@ -2849,6 +2961,17 @@ function draw(){
   if (screen === "clear") drawClearOverlay();
   if (screen === "win") drawWin();
   if (screen === "dead") drawDeathPanel();
+  // 对账失败的专属字样：定格与死亡面板上都写清「门要几、你是几」
+  if ((screen === "dying" || screen === "dead") && deathCause === "gate" && gateFail){
+    const m = ((gateFail.used % 4) + 4) % 4;
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(10,0,2,0.62)"; rr(W / 2 - 210, 196, 420, 74, 14); ctx.fill();
+    ctx.strokeStyle = "rgba(255,93,93,0.9)"; ctx.lineWidth = 2; rr(W / 2 - 210, 196, 420, 74, 14); ctx.stroke();
+    ctx.fillStyle = "#ff7b7b"; ctx.font = "bold 26px system-ui";
+    ctx.fillText("账对不上", W / 2, 230);
+    ctx.fillStyle = "#ffd7d7"; ctx.font = "bold 15px system-ui";
+    ctx.fillText("这道门要 ≡" + gateFail.need + "，你带过来的是 ≡" + m + "（已用 " + gateFail.used + " 次）", W / 2, 256);
+  }
   drawShieldChip();
   // touch pads：命中热区（padL/padR）保持不变；可视底板缩小＋降透明（UI 优化，
   // 减轻对来袭方向的遮挡）。冷却反馈：缓存命中→对应垫金边；拒绝→对应垫变灰抖动。
@@ -2937,7 +3060,37 @@ function drawHUD(){
   }
   if (denyT > 0){
     ctx.fillStyle = "rgba(255,80,80," + Math.min(denyT, 1) + ")"; ctx.font = "bold 24px system-ui";
-    ctx.fillText("✕ 已锁定 — 只能向前", W / 2, 128);
+    ctx.fillText(denyReason === "budget" ? "✕ 移位已用尽 — 只能往前走" : "✕ 已锁定 — 只能向前", W / 2, 128);
+  }
+  // 移位预算（常显剩余次数；剩 ≤3 变红提醒）——只在设了 budget 的关显示
+  if (budgetMax() !== Infinity){
+    const left = budgetLeft(), low = left <= 3;
+    const bx = W - 268, bw = 126;
+    ctx.fillStyle = low ? "rgba(122,18,24,0.78)" : "rgba(0,0,0,0.35)";
+    rr(bx, 12, bw, 34, 9); ctx.fill();
+    if (low){
+      ctx.strokeStyle = "rgba(255,93,93," + (0.55 + 0.45 * Math.sin(performance.now() / 160)).toFixed(2) + ")";
+      ctx.lineWidth = 2; rr(bx, 12, bw, 34, 9); ctx.stroke();
+    }
+    ctx.fillStyle = low ? "#ff9a9a" : "#fff"; ctx.font = "bold 15px system-ui"; ctx.textAlign = "right";
+    ctx.fillText("移位 " + left + "/" + budgetMax(), bx + bw - 12, 34);
+  }
+  // 对账账本（只有带对账门的关才显）：当前次数 mod 4 的四点，亮点＝现在这一格
+  // 放在右上角「移位」条的正下方，避开左上角护盾芯片与中上方的棘轮/凝滞提示
+  if ((level.gates || []).length){
+    const m = ((budgetUsed % 4) + 4) % 4;
+    ctx.textAlign = "left"; ctx.font = "bold 12px system-ui";
+    ctx.fillStyle = "rgba(255,255,255,0.72)"; ctx.fillText("对账", W - 268, 70);
+    for (let i = 0; i < 4; i++){
+      const gx = W - 224 + i * 28, gy = 66;
+      ctx.beginPath(); ctx.arc(gx, gy, 7, 0, Math.PI * 2);
+      ctx.fillStyle = i === m ? "#ffd166" : "rgba(255,255,255,0.18)"; ctx.fill();
+      if (i === m){ ctx.strokeStyle = "#fff6d0"; ctx.lineWidth = 1.6; ctx.stroke(); }
+      ctx.fillStyle = i === m ? "#14142b" : "rgba(255,255,255,0.5)";
+      ctx.font = "bold 9.5px system-ui"; ctx.textAlign = "center";
+      ctx.fillText(String(i), gx, gy + 3.3);
+      ctx.textAlign = "left";
+    }
   }
   ctx.fillStyle = "rgba(0,0,0,0.35)"; rr(W - 130, 12, 116, 34, 9); ctx.fill();
   ctx.fillStyle = "#fff"; ctx.textAlign = "right"; ctx.fillText("死亡 " + deaths, W - 26, 34);
@@ -3403,12 +3556,15 @@ function runwayClear(cp){
 function reviveTarget(){
   for (let i = checkpoints.length - 1; i >= 0; i--)
     if (runwayClear(checkpoints[i])) return checkpoints[i];
-  return { x: level.spawn.x, y: level.spawn.y, ring: 0 };
+  return { x: level.spawn.x, y: level.spawn.y, ring: 0, used: 0 };
 }
 function doRevive(){
   revivesUsed++;
   const rp = reviveTarget();
   player.x = rp.x; player.y = rp.y; ring = rp.ring;
+  // 预算：恢复到检查点时刻的已用次数快照（没有快照＝起点＝0）
+  budgetUsed = typeof rp.used === "number" ? rp.used : 0;
+  deathCause = ""; gateFlash = 0; gateFail = null;
   player.vx = 0; player.vy = 0; player.grounded = false;
   shiftCD = 0; coyote = 0; airFlip = true;
   evWarn = null; groundTime = 0;
@@ -3949,7 +4105,7 @@ window.__game = {
   get gateCard(){ return gateCard; },
   get gateFree(){ return gateFailFree; },
   ads: { failNext: () => { adFailNext = true; } },
-  get checkpoint(){ return checkpoint ? { x: checkpoint.x, y: checkpoint.y, ring: checkpoint.ring } : null; },
+  get checkpoint(){ return checkpoint ? { x: checkpoint.x, y: checkpoint.y, ring: checkpoint.ring, used: checkpoint.used } : null; },
   get checkpoints(){ return checkpoints.length; },
   get revivePoint(){ return reviveTarget(); },
   get runDeaths(){ return runDeaths; },
@@ -3958,6 +4114,11 @@ window.__game = {
   get deadBtns(){ return deadBtns.map(b => ({ action: b.action, disabled: !!b.disabled })); },
   get evDir(){ return evWarn ? evWarn.dir : 0; },
   get cd(){ return Math.round(shiftCD * 1000); },
+  get budget(){ return { used: budgetUsed, max: budgetMax() === Infinity ? null : budgetMax(),
+                         left: budgetLeft() === Infinity ? null : budgetLeft(), deny: denyReason }; },
+  get gates(){ return (level.gates || []).map(g => ({ x: g.x, need: g.need })); },
+  get gateFail(){ return gateFail ? { need: gateFail.need, used: gateFail.used, x: gateFail.x } : null; },
+  get deathCause(){ return deathCause; },
   get buf(){ return { dir: bufDir, side: bufSide, rej: rejFxT > 0, rejSide }; },
   get fragile(){ return fragState.map((f, i) => ({ t: Math.round(f.t * 1000), broken: f.broken, fragile: !!level.platforms[i].fragile })); },
   get imprints(){ return imprintState.map(s => ({ stage: s.stage, t: Math.round(s.t * 1000), ring: s.ring })); },
@@ -3973,6 +4134,8 @@ window.__game = {
   get mapRegions(){ return MAP_REGIONS.map(r => r.name); },
   get phases(){ return (level.phases || []).map(p => phaseOf(p)); },
   pressShift, loadLevel: (i) => { loadLevel(i); screen = "play"; },
+  // test-only: 手动推进一帧（配合 freeze 做确定性逐帧回放：物理只在被调用时走）
+  step: (dt) => { step(dt || 1 / 240); },
   // test-only: place the player (auto-run has no stop input; used to exercise the trap kill branch)
   warp: (x, y) => { player.x = x; if (y !== undefined) player.y = y; player.vy = 0; },
   // test-only: freeze physics at a given run phase (for stride screenshots)
@@ -3998,6 +4161,113 @@ window.__game = {
     }
   }
 };
+</script>
+<script type="module">
+/* FX: pixelfx overlay (die / shift / clear) + matching synthesized sounds. If this module
+   fails to load, the game itself is untouched and plays exactly as before. */
+import { createFrame, clearFrame, createFx, composite } from "./lib/core/index.js";
+import * as explosionFx from "./lib/fx/explosions/small-explosion.js";
+import * as empFx from "./lib/fx/scifi/emp-blast.js";
+import * as collectFx from "./lib/fx/pickups/collect-burst.js";
+
+const GOLD = ["#2a1a04", "#5c3a08", "#9c6d14", "#d99a26", "#ffc23d", "#ffe26b", "#fff3a6", "#ffffff"];
+const KINDS = {
+  die:   { mod: explosionFx, scale: 1.3, opts: { size: 0.5 } },
+  shift: { mod: empFx,       scale: 1.1, opts: {} },
+  clear: { mod: collectFx,   scale: 1.5, opts: { palette: GOLD } },
+};
+const wrap = document.getElementById("wrap");
+if (getComputedStyle(wrap).position === "static") wrap.style.position = "relative";
+const ov = document.createElement("canvas");
+ov.width = 960; ov.height = 540;
+ov.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;background:transparent;";
+wrap.appendChild(ov);
+const octx = ov.getContext("2d");
+octx.imageSmoothingEnabled = false;
+
+/* --- matching sound for each effect (synthesized, no audio assets) --- */
+let AC2 = null;
+function audio2() {
+  if (!AC2) { try { AC2 = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { } }
+  if (AC2 && AC2.state === "suspended") AC2.resume();
+  return AC2;
+}
+addEventListener("pointerdown", audio2, { once: true });
+function env(g, t0, peak, dur) {
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(peak, t0 + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+}
+function noiseSrc(ac, dur) {
+  const buf = ac.createBuffer(1, Math.ceil(ac.sampleRate * dur), ac.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const s = ac.createBufferSource(); s.buffer = buf; return s;
+}
+function playSound(kind) {
+  const ac = audio2(); if (!ac) return;
+  const t0 = ac.currentTime;
+  if (kind === "die") {           // explosion: noise boom + low thump
+    const n = noiseSrc(ac, 0.5), nf = ac.createBiquadFilter(), ng = ac.createGain();
+    nf.type = "lowpass"; nf.frequency.setValueAtTime(3200, t0);
+    nf.frequency.exponentialRampToValueAtTime(160, t0 + 0.45);
+    env(ng, t0, 0.5, 0.5); n.connect(nf).connect(ng).connect(ac.destination); n.start(t0); n.stop(t0 + 0.5);
+    const o = ac.createOscillator(), og = ac.createGain();
+    o.type = "sine"; o.frequency.setValueAtTime(120, t0);
+    o.frequency.exponentialRampToValueAtTime(30, t0 + 0.4);
+    env(og, t0, 0.45, 0.42); o.connect(og).connect(ac.destination); o.start(t0); o.stop(t0 + 0.45);
+  } else if (kind === "shift") {  // emp: electric zap sweep + crackle
+    const o = ac.createOscillator(), og = ac.createGain(), bp = ac.createBiquadFilter();
+    o.type = "sawtooth"; o.frequency.setValueAtTime(1250, t0);
+    o.frequency.exponentialRampToValueAtTime(140, t0 + 0.24);
+    bp.type = "bandpass"; bp.frequency.value = 900; bp.Q.value = 1.2;
+    env(og, t0, 0.16, 0.26); o.connect(bp).connect(og).connect(ac.destination); o.start(t0); o.stop(t0 + 0.28);
+    const n = noiseSrc(ac, 0.09), nf = ac.createBiquadFilter(), ng = ac.createGain();
+    nf.type = "highpass"; nf.frequency.value = 2500;
+    env(ng, t0, 0.12, 0.09); n.connect(nf).connect(ng).connect(ac.destination); n.start(t0); n.stop(t0 + 0.1);
+  } else if (kind === "clear") {  // collect: bright little arpeggio
+    [784, 988, 1175, 1568].forEach((f, i) => {
+      const o = ac.createOscillator(), og = ac.createGain(), ts = t0 + i * 0.07;
+      o.type = "triangle"; o.frequency.value = f;
+      env(og, ts, 0.2, 0.3); o.connect(og).connect(ac.destination); o.start(ts); o.stop(ts + 0.32);
+    });
+  }
+}
+
+const active = [];
+window.FX = {
+  __acState() { return AC2 ? AC2.state : "none"; },
+  spawn(kind, sx, sy) {
+    const k = KINDS[kind]; if (!k) return;
+    playSound(kind);
+    const [w, h] = k.mod.meta.size, [ox, oy] = k.mod.meta.origin;
+    const c = document.createElement("canvas"); c.width = w; c.height = h;
+    active.push({
+      fx: createFx(k.mod, { x: ox, y: oy, seed: 7, ...k.opts }),
+      frame: createFrame(w, h), c, cx: c.getContext("2d"),
+      img: null, sx, sy, ox, oy, scale: k.scale,
+    });
+    const a = active[active.length - 1];
+    a.img = a.cx.createImageData(w, h);
+  },
+};
+let last = performance.now();
+(function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  octx.clearRect(0, 0, 960, 540);
+  for (let i = active.length - 1; i >= 0; i--) {
+    const a = active[i];
+    a.fx.update(dt);
+    clearFrame(a.frame);
+    a.fx.draw(a.frame);
+    composite(a.frame, a.img.data, null);
+    a.cx.putImageData(a.img, 0, 0);
+    octx.drawImage(a.c, Math.round(a.sx - a.ox * a.scale), Math.round(a.sy - a.oy * a.scale),
+      a.c.width * a.scale, a.c.height * a.scale);
+    if (a.fx.done()) active.splice(i, 1);
+  }
+  requestAnimationFrame(loop);
+})(performance.now());
 </script>
 </body>
 </html>
