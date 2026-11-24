@@ -242,7 +242,7 @@ const LEVELS = [
     ],
     spikes: [
       { x:1050, y:460, set:"A" },
-      { x:2400, y:460, set:"B" },
+      { x:2400, y:460, set:"B", mask:[0,2] },
       { x:3960, y:460, set:"B" },
       { x:4390, y:460, set:"A" }
     ],
@@ -362,7 +362,9 @@ const LEVELS = [
       { x:-20, y:460, w:440, set:"AB" },
       { x:400, y:460, w:2060, set:"AB" },
       { x:2420, y:460, w:220, set:"AB" },
-      { x:2620, y:460, w:1620, set:"AB" },
+      { x:2620, y:460, w:1080, set:"AB" },
+      { x:3700, y:460, w:100, set:"B", fragile:true },
+      { x:3800, y:460, w:440, set:"AB" },
       { x:4220, y:460, w:1520, set:"AB" },
       { x:5700, y:460, w:520, set:"AB" }
     ],
@@ -372,6 +374,7 @@ const LEVELS = [
       { x:2060, y:460, set:"A" },
       { x:3040, y:460, set:"B" },
       { x:3470, y:460, set:"A" },
+      { x:3600, y:460, set:"B" },
       { x:3900, y:460, set:"B" },
       { x:4760, y:460, set:"B" },
       { x:5340, y:460, set:"B" }
@@ -484,7 +487,7 @@ const LEVELS = [
       { x:5050, y:390, set:"B", axis:"y", dist:70, speed:1.9, phase:-47.05 },
       { x:5520, y:390, set:"A", axis:"y", dist:70, speed:1.9, phase:-51.629 }
     ],
-    events: [{ x: 600 }, { x: 6040 }],
+    events: [{ x: 600, dir: 1 }, { x: 6040, dir: 1 }],
     goal: { x: 8480, y: 368, w: 44, h: 92, surf: 460 }
   },
   {
@@ -511,7 +514,7 @@ const LEVELS = [
     ],
     spikes: [
       { x:930, y:340, set:"B" },
-      { x:3660, y:460, set:"B" },
+      { x:3660, y:460, set:"B", mask:[0,2] },
       { x:4090, y:460, set:"A" },
       { x:4520, y:460, set:"B" },
       { x:4950, y:460, set:"A" }
@@ -562,7 +565,7 @@ const LEVELS = [
       { x:4450, y:390, set:"A", axis:"y", dist:70, speed:1.9, phase:-41.204 },
       { x:4910, y:390, set:"B", axis:"y", dist:70, speed:2, phase:-48.173 }
     ],
-    events: [{ x: 8310 }],
+    events: [{ x: 8310, dir: 1 }],
     goal: { x: 10170, y: 368, w: 44, h: 92, surf: 460 }
   },
   {
@@ -574,7 +577,9 @@ const LEVELS = [
       { x:420, y:96, w:560, set:"B" },
       { x:740, y:96, w:800, set:"A" },
       { x:400, y:460, w:1140, set:"AB" },
-      { x:1520, y:460, w:2020, set:"AB" },
+      { x:1520, y:460, w:1580, set:"AB" },
+      { x:3100, y:460, w:80, set:"B", fragile:true },
+      { x:3180, y:460, w:360, set:"AB" },
       { x:3520, y:460, w:1710, set:"AB" },
       { x:5210, y:460, w:60, set:"AB" },
       { x:5280, y:200, w:260, set:"AB" },
@@ -589,7 +594,8 @@ const LEVELS = [
       { x:1940, y:460, set:"A" },
       { x:2360, y:460, set:"B" },
       { x:2780, y:460, set:"A" },
-      { x:3200, y:460, set:"B" },
+      { x:3020, y:460, set:"B" },
+      { x:3260, y:460, set:"B" },
       { x:7070, y:460, set:"A" },
       { x:7630, y:460, set:"A" }
     ],
@@ -656,7 +662,7 @@ const LEVELS = [
     ],
     spikes: [
       { x:850, y:460, set:"A" },
-      { x:1310, y:460, set:"B" },
+      { x:1310, y:460, set:"B", mask:[0,2] },
       { x:1770, y:460, set:"A" },
       { x:2230, y:460, set:"B" },
       { x:9015, y:460, set:"A" },
@@ -670,7 +676,7 @@ const LEVELS = [
       { x:7595, y:390, set:"B", axis:"y", dist:70, speed:2.1, phase:-73.573 }
     ],
     speeds: [{ x0: 360, x1: 2610, mul: 1.35 }],
-    events: [{ x: 8115 }],
+    events: [{ x: 8115, dir: 1 }],
     goal: { x: 9975, y: 368, w: 44, h: 92, surf: 460 }
   },
   {
@@ -742,7 +748,7 @@ const LEVELS = [
       { x:4240, y:460, set:"A" },
       { x:4660, y:460, set:"B" },
       { x:5290, y:120, set:"A", hang:true },
-      { x:6380, y:460, set:"B" },
+      { x:6380, y:460, set:"B", mask:[0,2] },
       { x:6960, y:460, set:"B" }
     ],
     movers: [
@@ -839,7 +845,7 @@ const LEVELS = [
       { x:6480, y:460, set:"A" },
       { x:6820, y:460, set:"B" },
       { x:10610, y:460, set:"A" },
-      { x:11960, y:460, set:"B" }
+      { x:11960, y:460, set:"B", mask:[0,2] }
     ],
     movers: [
       { x:4680, y:390, set:"A", axis:"y", dist:70, speed:2.1, phase:-45.406 },
@@ -850,7 +856,7 @@ const LEVELS = [
     inverts: [{ x0: 380, x1: 2560 }],
     locks: [{ x0: 4440, x1: 5320 }],
     speeds: [{ x0: 360, x1: 2580, mul: 1.35 }],
-    events: [{ x: 5580 }],
+    events: [{ x: 5580, dir: 1 }],
     orbs: [{ x: 7345, y: 305 }],
     goal: { x: 13420, y: 368, w: 44, h: 92, surf: 460 }
   },
@@ -887,7 +893,7 @@ const LEVELS = [
       { x:7010, y:460, set:"A" },
       { x:8510, y:460, set:"A" },
       { x:8950, y:460, set:"B" },
-      { x:9390, y:460, set:"A" }
+      { x:9390, y:460, set:"A", mask:[1,3] }
     ],
     movers: [
       { x:2720, y:390, set:"B", axis:"y", dist:70, speed:2.1, phase:-30.217 },
@@ -896,7 +902,7 @@ const LEVELS = [
     ],
     inverts: [{ x0: 8040, x1: 9750 }],
     locks: [{ x0: 2480, x1: 3540 }],
-    events: [{ x: 600 }, { x: 5770 }],
+    events: [{ x: 600, dir: 1 }, { x: 5770, dir: 1 }],
     orbs: [{ x: 7535, y: 305 }],
     goal: { x: 12160, y: 368, w: 44, h: 92, surf: 460 }
   },
@@ -939,7 +945,7 @@ const LEVELS = [
       { x:8425, y:390, set:"A", axis:"y", dist:70, speed:2.3, phase:-100.235 }
     ],
     locks: [{ x0: 8185, x1: 9245 }],
-    events: [{ x: 6305 }],
+    events: [{ x: 6305, dir: 1 }],
     orbs: [{ x: 625, y: 305 }, { x: 2580, y: 305 }],
     goal: { x: 9625, y: 368, w: 44, h: 92, surf: 460 }
   },
@@ -974,7 +980,7 @@ const LEVELS = [
       { x:6410, y:460, set:"B" },
       { x:6820, y:460, set:"A" },
       { x:9415, y:460, set:"A" },
-      { x:9755, y:460, set:"B" },
+      { x:9755, y:460, set:"B", mask:[0,2] },
       { x:11345, y:460, set:"A" },
       { x:11905, y:460, set:"A" }
     ],
@@ -989,7 +995,7 @@ const LEVELS = [
     ],
     locks: [{ x0: 11145, x1: 12205 }],
     speeds: [{ x0: 2930, x1: 4700, mul: 1.45 }],
-    events: [{ x: 8515 }],
+    events: [{ x: 8515, dir: 1 }],
     orbs: [{ x: 10280, y: 305 }],
     goal: { x: 12585, y: 368, w: 44, h: 92, surf: 460 }
   },
@@ -1040,7 +1046,7 @@ const LEVELS = [
     inverts: [{ x0: 420, x1: 2570 }],
     locks: [{ x0: 4610, x1: 6230 }],
     speeds: [{ x0: 6250, x1: 8470, mul: 1.3 }],
-    events: [{ x: 2730 }, { x: 9360 }],
+    events: [{ x: 2730, dir: 1 }, { x: 9360, dir: 1 }],
     orbs: [{ x: 8635, y: 305 }],
     goal: { x: 14100, y: 368, w: 44, h: 92, surf: 460 }
   },
@@ -1077,7 +1083,7 @@ const LEVELS = [
       { x:7390, y:460, set:"A" },
       { x:7730, y:460, set:"B" },
       { x:10720, y:460, set:"A" },
-      { x:11280, y:460, set:"A" }
+      { x:11280, y:460, set:"A", mask:[1,3] }
     ],
     movers: [
       { x:2970, y:390, set:"B", axis:"y", dist:70, speed:2.4, phase:-26.79 },
@@ -1090,7 +1096,7 @@ const LEVELS = [
     inverts: [{ x0: 4620, x1: 6330 }],
     locks: [{ x0: 10520, x1: 11580 }],
     speeds: [{ x0: 360, x1: 2580, mul: 1.4 }],
-    events: [{ x: 6490 }],
+    events: [{ x: 6490, dir: 1 }],
     orbs: [{ x: 8255, y: 305 }, { x: 11865, y: 305 }],
     goal: { x: 13480, y: 368, w: 44, h: 92, surf: 460 }
   },
@@ -1130,7 +1136,7 @@ const LEVELS = [
       { x:10140, y:460, set:"B" },
       { x:11730, y:460, set:"B" },
       { x:12290, y:460, set:"B" },
-      { x:13750, y:460, set:"B" },
+      { x:13750, y:460, set:"B", mask:[0,2] },
       { x:14090, y:460, set:"A" },
       { x:14720, y:120, set:"A", hang:true }
     ],
@@ -1145,7 +1151,7 @@ const LEVELS = [
     inverts: [{ x0: 7030, x1: 8740 }],
     locks: [{ x0: 11530, x1: 12590 }],
     speeds: [{ x0: 4890, x1: 7110, mul: 1.5 }],
-    events: [{ x: 8900 }, { x: 12850 }],
+    events: [{ x: 8900, dir: 1 }, { x: 12850, dir: 1 }],
     orbs: [{ x: 10665, y: 305 }],
     goal: { x: 14820, y: 96, w: 44, h: 70, surf: 118, ceil:true }
   },
@@ -1172,21 +1178,231 @@ const LEVELS = [
   }
 ];
 
+/* —— 测试房组（第一批·灰盒）：只在 URL 带 ?rooms=1 时追加到 LEVELS 末尾，
+   正式模式完全不出现——不进选关、不占存档映射、不动 32 关顺序。
+   每房验一个维度，几何全部按真实引擎参数（跑速 195、重力 1600、
+   冷却 0.4s＝78px、滞空翻转额度 airFlip）推演，解法由 test_solver 实测背书。 —— */
+const ROOMS_ON = (()=>{ try { return new URLSearchParams(location.search).has("rooms"); } catch(e){ return false; } })();
+const ROOMS = [
+  { // ① 同目标不同路径：前移先行在缺口翻重力够不到 B 轨（128px 水平 < 缺口后落点），必死；正解先后移上 A 轨再换 B 轨
+    name: "测试房① · 同目标不同路径", width: 2500, spawn: { x: 60, y: 400 },
+    hint: "测试房：同一终点，两条起手——只有一条活。",
+    platforms: [
+      { x:-40, y:460, w:740, set:"AB" },
+      { x:650, y:96, w:600, set:"A" },
+      { x:1200, y:96, w:700, set:"B" },
+      { x:1600, y:460, w:940, set:"AB" }
+    ],
+    spikes: [], movers: [], phases: [],
+    goal: { x: 2100, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  { // ② 方向锁两门：mask 门只放行特定相位关系；两门相距 117px，但真正的锁是「门前预告刺＋掩码」——前移一次撞第二门，反射解死
+    name: "测试房② · 方向锁", width: 1900, spawn: { x: 60, y: 400 },
+    hint: "测试房：两扇门，只认一种过法。",
+    platforms: [
+      { x:-40, y:460, w:1980, set:"AB" },
+      { x:-40, y:96, w:1980, set:"AB" }
+    ],
+    spikes: [
+      { x:880, y:460, set:"A", mask:[1,2] },
+      { x:1100, y:460, set:"A", mask:[0] },
+      { x:1217, y:460, set:"A", mask:[0,1,2] },
+      { x:1217, y:118, hang:true, set:"B", mask:[2] }
+    ],
+    movers: [], phases: [],
+    goal: { x: 1600, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  { // ③ 不操作：第一根刺是影子——对它做任何反应（前移撞实、后移升天被倒挂刺收）都死；真正的门在后面，且前移解被掩码刺惩罚
+    name: "测试房③ · 不操作", width: 2400, spawn: { x: 60, y: 400 },
+    hint: "测试房：有些刺，不理它才是解法。",
+    platforms: [
+      { x:-40, y:460, w:2480, set:"AB" },
+      { x:-40, y:96, w:1540, set:"AB" }
+    ],
+    spikes: [
+      { x:900, y:460, set:"B" },
+      { x:940, y:118, hang:true, set:"A" },
+      { x:1500, y:460, set:"A" },
+      { x:1570, y:460, set:"A", mask:[1] }
+    ],
+    movers: [], phases: [],
+    goal: { x: 2100, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  { // ④ 重力资源：缺口前只有一次滞空翻转额度——先翻的人在缺口无翻可用、坠死；正解先换台过刺再翻；回气珠是翻早者的补救线
+    name: "测试房④ · 重力资源", width: 2500, spawn: { x: 60, y: 400 },
+    hint: "测试房：翻转只有一次，先想清楚花在哪。",
+    platforms: [
+      { x:-40, y:460, w:740, set:"AB" },
+      { x:820, y:96, w:680, set:"B" },
+      { x:1550, y:460, w:990, set:"AB" }
+    ],
+    spikes: [ { x:640, y:460, set:"A" } ],
+    movers: [], phases: [],
+    orbs: [ { x:815, y:580 } ],
+    goal: { x: 2300, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  { // ⑤ 落点选择：显眼的高轨（B）是陷阱——换组断轨、翻转落空、走到头升天，三路皆死；不起眼的长 A 轨才是活路
+    name: "测试房⑤ · 落点选择", width: 2800, spawn: { x: 60, y: 400 },
+    hint: "测试房：两条轨，一条是摆设。",
+    platforms: [
+      { x:-40, y:460, w:740, set:"AB" },
+      { x:770, y:178, w:1330, set:"A" },
+      { x:800, y:96, w:450, set:"B" },
+      { x:2000, y:460, w:840, set:"AB" }
+    ],
+    spikes: [], movers: [], phases: [],
+    goal: { x: 2600, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  { // ⑥ 两态环封锁：A 轨在走廊前到头，B 轨看着能续命——轨上刺对（B@2050 / A@2110，间距 60px < 冷却距离 78px）把两个可达相位一起封死：换过去撞第一根、换回来冷却没好撞第二根、翻下去是虚空。活路是提前翻下到地面层，从刺下走过去
+    name: "测试房⑥ · 两态环封锁", width: 2850, spawn: { x: 60, y: 400 },
+    hint: "测试房：上面那条路，两个状态都过不去。",
+    platforms: [
+      { x:-40, y:460, w:690, set:"AB" },
+      { x:680, y:96, w:1200, set:"A" },
+      { x:1500, y:96, w:850, set:"B" },
+      { x:1850, y:460, w:1040, set:"AB" }
+    ],
+    spikes: [
+      { x:2050, y:118, hang:true, set:"B" },
+      { x:2110, y:118, hang:true, set:"A" }
+    ],
+    movers: [], phases: [],
+    goal: { x: 2650, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  { // ⑦ 脆相平台：B 地板 0.8s 碎——切早了到不了、切晚了来不及；中途被 B 刺逼回黎明正好重置计时
+    name: "测试房⑦ · 脆相平台", width: 2400, spawn: { x: 60, y: 400 },
+    hint: "测试房：这块地板，只活 0.8 秒。",
+    platforms: [
+      { x:-40, y:460, w:740, set:"AB" },
+      { x:700, y:460, w:100, set:"B", fragile:true },
+      { x:800, y:460, w:700, set:"AB" },
+      { x:1500, y:460, w:100, set:"B", fragile:true },
+      { x:1600, y:460, w:840, set:"AB" }
+    ],
+    spikes: [ { x:1150, y:460, set:"B" } ],
+    movers: [], phases: [],
+    goal: { x: 2200, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  { // ⑧ 相位印记·初见：越线时你的相位被记下，2s 后它在前方生成只认这个相位的刺——第一次多半撞上
+    name: "测试房⑧ · 印记初见", width: 2200, spawn: { x: 60, y: 400 },
+    hint: "测试房：地上那道紫线，会记住你。",
+    platforms: [ { x:-40, y:460, w:2280, set:"AB" } ],
+    spikes: [], movers: [], phases: [],
+    imprints: [ { lines: [700], ax: 1200, y: 460 } ],
+    goal: { x: 1900, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  { // ⑨ 相位印记·可预判：两道线两根刺，激活点提前 300+px 亮相——到达环 ≠ 记录环即可
+    name: "测试房⑨ · 印记可预判", width: 2600, spawn: { x: 60, y: 400 },
+    hint: "测试房：它记下什么，你就别是什么。",
+    platforms: [ { x:-40, y:460, w:2680, set:"AB" } ],
+    spikes: [], movers: [], phases: [],
+    imprints: [ { lines: [600], ax: 1300, y: 460 }, { lines: [1500], ax: 2200, y: 460 } ],
+    goal: { x: 2400, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  { // ⑩ 相位印记·利用：同一印记两道线——第二道线可以改写记录，把致命环换成你不会用的那个
+    name: "测试房⑩ · 印记利用", width: 2300, spawn: { x: 60, y: 400 },
+    hint: "测试房：记录可以被覆盖。",
+    platforms: [ { x:-40, y:460, w:2380, set:"AB" } ],
+    spikes: [], movers: [], phases: [],
+    imprints: [ { lines: [600, 1300], ax: 1750, y: 460 } ],
+    goal: { x: 2050, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  { // ⑪ 回声·初见：躲刺的那次移位被回声区记下，1.2s 后把前方影子刺悄悄点亮——你亲手布的雷
+    name: "测试房⑪ · 回声初见", width: 2100, spawn: { x: 60, y: 400 },
+    hint: "测试房：括号区里，你的移位有回声。",
+    platforms: [ { x:-40, y:460, w:2180, set:"AB" } ],
+    spikes: [
+      { x:750, y:460, set:"A" },
+      { x:1250, y:460, set:"B" },
+      { x:1500, y:460, set:"B", echo:"e1" }
+    ],
+    movers: [], phases: [],
+    echoes: [ { id: "e1", x0: 600, x1: 1100, delay: 1.2 } ],
+    goal: { x: 1850, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  { // ⑫ 回声·可预判：刺对（A@1400＋B@1470，间距 < 冷却距离）锁死所有相位——只有回声关掉第一根才有路；躲刺的移位正好在区内
+    name: "测试房⑫ · 回声可预判", width: 2000, spawn: { x: 60, y: 400 },
+    hint: "测试房：这两根刺挨得太近，只能请回声帮忙。",
+    platforms: [ { x:-40, y:460, w:2080, set:"AB" } ],
+    spikes: [
+      { x:800, y:460, set:"A" },
+      { x:1400, y:460, set:"A", echo:"e1" },
+      { x:1470, y:460, set:"B" }
+    ],
+    movers: [], phases: [],
+    echoes: [ { id: "e1", x0: 600, x1: 1100, delay: 1.5 } ],
+    goal: { x: 1750, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  { // ⑬ 回声·利用：回声开路（关掉守门刺）→ 空中翻转花掉额度 → 回气珠续翻 → 第二段轨——全链只有回声能起头
+    name: "测试房⑬ · 回声利用", width: 3400, spawn: { x: 60, y: 400 },
+    hint: "测试房：先让回声开门，后面的路才存在。",
+    platforms: [
+      { x:-40, y:460, w:1640, set:"AB" },
+      { x:1750, y:96, w:400, set:"B" },
+      { x:2350, y:96, w:500, set:"B" },
+      { x:2900, y:460, w:540, set:"AB" }
+    ],
+    spikes: [
+      { x:750, y:460, set:"A" },
+      { x:1300, y:460, set:"A", echo:"e1" }
+    ],
+    movers: [], phases: [],
+    echoes: [ { id: "e1", x0: 500, x1: 900, delay: 1.5 } ],
+    orbs: [ { x:2225, y:300 } ],
+    goal: { x: 3200, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  { // ⑭ 锚定物·初见：天花板轨看着干净——刺球在轨上巡逻，四个相位都躲不开它；地板换相位才是正解
+    name: "测试房⑭ · 锚定初见", width: 2300, spawn: { x: 60, y: 400 },
+    hint: "测试房：上面那条路，有东西在巡逻。",
+    platforms: [
+      { x:-40, y:460, w:2380, set:"AB" },
+      { x:700, y:96, w:900, set:"A" }
+    ],
+    spikes: [ { x:1000, y:460, set:"A" }, { x:1300, y:460, set:"A" } ],
+    movers: [], phases: [],
+    anchors: [ { x:1150, y:130, axis:"x", dist:230, speed:1.3, phase:0 } ],
+    goal: { x: 2000, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  { // ⑮ 锚定物·可预判：刺球按正弦钉在轨心（到达时刻它正堵轨）——轨下中层台阶绕行，它的轨迹每局一模一样
+    name: "测试房⑮ · 锚定可预判", width: 2400, spawn: { x: 60, y: 400 },
+    hint: "测试房：它堵轨的时刻，每局都一样。",
+    platforms: [
+      { x:-40, y:460, w:940, set:"AB" },
+      { x:980, y:96, w:620, set:"B" },
+      { x:1150, y:300, w:300, set:"AB" },
+      { x:1500, y:460, w:940, set:"AB" }
+    ],
+    spikes: [], movers: [], phases: [],
+    anchors: [ { x:1290, y:250, axis:"y", dist:120, speed:1.6, phase:1.0 } ],
+    goal: { x: 2100, y: 368, w: 44, h: 92, surf: 460 }
+  },
+  { // ⑯ 锚定物·组合：刺球横扫地板两根刺之间的空地——地板换相路线被它封死，只能提前上天花板
+    name: "测试房⑯ · 锚定组合", width: 2600, spawn: { x: 60, y: 400 },
+    hint: "测试房：地板那条路，它替你否了。",
+    platforms: [
+      { x:-40, y:460, w:2680, set:"AB" },
+      { x:900, y:96, w:1100, set:"A" }
+    ],
+    spikes: [ { x:1250, y:460, set:"A" }, { x:1550, y:460, set:"B" } ],
+    movers: [], phases: [],
+    anchors: [ { x:1400, y:432, axis:"x", dist:280, speed:1.2, phase:0 } ],
+    goal: { x: 2300, y: 368, w: 44, h: 92, surf: 460 }
+  }
+];
+if (ROOMS_ON) for (const r of ROOMS) LEVELS.push(r);
+
 /* Beginner tutorial: steps live ON the real levels, highlight the real
    controls (the shift pads / keys), and advance ONLY on real play —
    reaching a position or actually shifting the world to a target state.
    No timers, no click-anywhere advance. */
 const TUT = [
   [
-    { at: 0,    text: "前面那座桥只在「黄昏」里。点「前移」再过去。", hl: "F", done: { ring: 1 } },
-    { at: 0,    text: "在这儿移位，脚下会长刺——移完千万别停。", done: { x: 1080 } }
+    { at: 0,    text: "前面那座桥只在「黄昏」里。点「前移」再过去。", hl: "F", done: { ring: 1 } }
   ],
   [
     { at: 0,    text: "这就是你。你自己会跑——先看一会儿。", done: { x: 300 } },
     { at: 0,    text: "点右下角「前移」——让世界向前移一格。", hl: "F", done: { ring: 1 } },
-    { at: 0,    text: "虚线桥变实了。那根红刺呢？在这个状态里它不是真的。", done: { x: 1000 } },
     { at: 1000, text: "下一座桥只存在于「黎明」。点左下角「后移」退回去。", hl: "B", done: { ring: 0 } },
-    { at: 0,    text: "前面那根刺只在「黄昏」是真的。你现在是黎明——直接穿过去。", done: { x: 2350 } },
     { at: 2350, text: "最后一个缺口：桥在「黄昏」里。点「前移」。", hl: "F", done: { ring: 1 } },
     { at: 0,    text: "整个游戏就这么多。跑到旗子那儿去。", done: { x: 2900 } }
   ],
@@ -1195,7 +1411,6 @@ const TUT = [
     { at: 330,  text: "地板到头了。连点两下「前移」——翻转重力，去天花板上跑。", hl: "F", done: { ring: 2 } },
     { at: 0,    text: "倒过来规则一样：虚线就是另一个状态。", done: { x: 1250 } },
     { at: 1150, text: "下一段天花板只存在于「虚空」。点「前移」。", hl: "F", done: { ring: 3 } },
-    { at: 0,    text: "那根倒挂的刺在虚空里不是真的。继续走。", done: { x: 1900 } },
     { at: 1900, text: "现在回到「夜幕」。点「后移」。", hl: "B", done: { ring: 2 } },
     { at: 2500, text: "地板快回来了。移位到黎明或黄昏，落下去。", done: { ring: 0 } },
     { at: 2700, text: "稳住。旗子就在前面。", done: { x: 3150 } }
@@ -1205,8 +1420,7 @@ const TUT = [
     { at: 1400, text: "完整循环：状态环没有头尾，虚空之后又是黎明。", done: { ring: 0 } }
   ],
   [
-    { at: 0,    text: "棘轮区：在红区里，「后移」被锁定，状态环只能向前。", done: { x: 420 } },
-    { at: 1150, text: "长缺口需要回到黎明——但你退不回去。只能向前绕一整圈，走头顶的轨道。", done: { ring: 2 } }
+    { at: 0,    text: "棘轮区：在红区里，「后移」被锁定，状态环只能向前。", done: { x: 420 } }
   ],
   [
     { at: 0,    text: "错峰：地板和天花板轮着用，连翻两次是常态。", done: { x: 420 } }
@@ -1331,6 +1545,44 @@ let level = LEVELS[0];
 let unlocked = 0;
 try { unlocked = Math.max(0, Math.min(LEVELS.length - 1, parseInt(localStorage.getItem("youkeng_save_v1") || "0", 10) || 0)); } catch(e) {}
 function saveUnlock(){ try { localStorage.setItem("youkeng_save_v1", String(unlocked)); } catch(e) {} }
+/* ---------------- 存档迁移（版本阶梯 normalize） ----------------
+   关名表 youkeng_meta_v2 是迁移锚：启动时比对「上次关名表」与当前 LEVELS，
+   不一致（改名/重排/增删）时——records.lv 按关名重映射（同名保留、匹配不上
+   丢弃）；unlocked 按已通关数换算（旧前沿前通关的关在新表还剩几关就解锁
+   到第几关，保守只认数）。无名表的老存档按 v17 名表认。regions 广告门
+   既得权益不随迁移清零。迁移在区域豁免判定之前执行。 */
+const LEGACY_NAMES = ["序章 · 别停","第 1 关 · 移位大地","第 2 关 · 移位天空","第 3 关 · 错峰","第 4 关 · 棘轮","第 5 关 · 回廊","第 6 关 · 交织","第 7 关 · 浮岛","第 8 关 · 双棘","第 9 关 · 巡针","第 10 关 · 试炼","第 11 关 · 疾风","第 12 关 · 凝滞","第 13 关 · 巡回","第 14 关 · 颠倒","第 15 关 · 异变","第 16 关 · 绝壁","第 17 关 · 连环","第 18 关 · 逆鳞","第 19 关 · 回气","第 20 关 · 无间","第 21 关 · 试炼场","第 22 关 · 双生劫","第 23 关 · 千针阵","第 24 关 · 逆鳞甲","第 25 关 · 修罗","第 26 关 · 炼狱门","第 27 关 · 九死","第 28 关 · 无间道","第 29 关 · 轮回","第 30 关 · 地狱","试炼 · 相位"];
+function migrateSaves(){
+  try {
+    const cur = LEVELS.map(l => l.name);
+    const curJson = JSON.stringify(cur);
+    const saved = localStorage.getItem("youkeng_meta_v2");
+    if (saved === curJson) return false;
+    const fromNames = saved ? JSON.parse(saved) : LEGACY_NAMES;
+    if (!Array.isArray(fromNames)) return false;
+    try {
+      const r = JSON.parse(localStorage.getItem("youkeng_records_v1") || "null");
+      if (r && Array.isArray(r.lv)){
+        const nl = [];
+        r.lv.forEach((entry, oi) => {
+          if (!entry) return;
+          const ni = cur.indexOf(fromNames[oi]);
+          if (ni >= 0 && !nl[ni]) nl[ni] = entry;
+        });
+        r.lv = nl;
+        localStorage.setItem("youkeng_records_v1", JSON.stringify(r));
+      }
+    } catch(e) {}
+    const doneOld = Math.max(0, Math.min(fromNames.length, unlocked));
+    let kept = 0;
+    for (let i = 0; i < doneOld; i++) if (cur.includes(fromNames[i])) kept++;
+    unlocked = Math.max(0, Math.min(LEVELS.length - 1, kept));
+    saveUnlock();
+    localStorage.setItem("youkeng_meta_v2", curJson);
+    return true;
+  } catch(e) { return false; }
+}
+migrateSaves();
 // 测试直达：?unlock=30 打开即全关解锁（并写入存档，之后普通链接也保持解锁）
 try { if (new URLSearchParams(location.search).get("unlock") === "30") { unlocked = LEVELS.length - 1; saveUnlock(); } } catch(e) {}
 /* ---------------- 区域广告门（主人 2026-11-24 定版） ----------------
@@ -1545,7 +1797,16 @@ function commitRun(){
 
 function curState(){ return CONFIG.states[ring]; }
 function platActive(p){ const s = curState().plat; return p.set === "AB" || p.set === s; }
-function spikeActive(s){ return s.set === curState().plat; }
+function spikeActive(s){
+  // 危险掩码（第一批·数据层）：mask 为相位编号数组，该刺只在这些 ring 里是实体；
+  // 无 mask 时走旧口径（set 与当前平台组相同才实体）。渲染/判定共用此函数。
+  let on;
+  if (s.mask) on = s.mask.includes(ring);
+  else on = s.set === curState().plat;
+  // 回声·环境版（第二批）：被回声翻转的机关实↔影互换（只改机关，不改玩家相位）
+  if (s.echo && echoOff[s.echo]) on = !on;
+  return on;
+}
 
 /* —— 统一开局重置（一局一份预算，主人 2026-11-24 追加口径） ——
    「一局」＝一次开局：loadLevel 进关、死亡面板「重玩本关」、Shift/触控垫快捷
@@ -1557,6 +1818,7 @@ function spikeActive(s){ return s.set === curState().plat; }
    levelDeathsStart 管，跨重玩继续累计，resetRun 绝不动它。 */
 function resetRun(){
   ring = 0; shiftCD = 0; coyote = 0; airFlip = true;
+  bufDir = 0; bufFxT = 0; rejFxT = 0;
   attemptTime = 0; linkShiftCount = 0;
   evWarn = null; evDone = {}; orbTaken = {};
   phasePrev = (level.phases || []).map(p => phaseOf(p)); phasePulse = (level.phases || []).map(() => 0);
@@ -1568,6 +1830,9 @@ function resetRun(){
   trapRows = [];
   trapHintArmed = lastDeathTrap && !trapHintEver;
   lastDeathTrap = false;
+  fragState = level.platforms.map(() => ({ t: 0, broken: false }));
+  imprintState = (level.imprints || []).map(() => ({ stage: 0, t: 0, ring: 0 }));
+  echoQueue = []; echoOff = {}; imprintPrevCx = null;
 }
 function loadLevel(i){
   levelIdx = i; level = LEVELS[i];
@@ -1583,6 +1848,15 @@ function respawn(){
 
 let denyT = 0; // ratchet deny feedback timer
 let shiftCD = 0; // 移位冷却（秒）：防连切悬浮/穿刺——切档后 0.4s 内再切无效
+/* —— 输入缓冲（第0批定案）：冷却结束前 100ms 内按下的方向缓存一格，冷却一结束
+   立即按「执行当刻」的规则判定执行（凝滞/棘轮/滞空额度在执行时复查）；最多缓存
+   一格（后按覆盖不排队）。超出缓冲窗的冷却中按键＝拒绝：对应触控垫短暂变灰抖动，
+   不伪装成功。缓存命中时对应垫亮金边。键盘与触控同走 pressShift 一条路。 —— */
+const BUF_WIN = 0.1;
+let bufDir = 0;        // 已缓存的方向（已含颠倒区换算，0＝无缓存）
+let bufSide = 0;       // 缓存来源的原始方向（画哪个垫的反馈）
+let bufFxT = 0;        // 缓存反馈剩余秒
+let rejSide = 0, rejFxT = 0;  // 拒绝反馈：哪个垫 / 剩余秒
 let coyote = 0;  // 离地宽限（秒）：翻重力的输入宽容 0.12s
 let airFlip = true; // 每段滞空只有一次空中翻重力的机会（落地重置、任何翻重力都消耗）——杀坑里悠悠球，保留下落中翻身跳岛
 function ratchetZones(){
@@ -1687,6 +1961,25 @@ function trapTrigger(){
   if (!trapScorch.some(s => Math.abs(s.x - rowX) < 30)) trapScorch.push({ x: rowX });
 }
 let evDone = {}, orbTaken = {};
+/* —— 第二批历史机制（一次一种、三关验证，测试房 ⑧–⑯） ——
+   相位印记 imprints：[{lines:[x...], ax, y, hang}]——玩家着地越过记录线时记下
+   当时 ring，2s 后在 (ax,y) 生成一根只在记录 ring 里致命的刺，存活 4s；
+   重复越线刷新记录与计时（记录/激活同用菱形符号呼应，切换不能撤销记录）。
+   回声 echoes：[{id,x0,x1,delay}]——区内成功移位，delay 秒后翻转该 id 机关
+   （spikes/movers 的 echo 字段）的生效状态，不强制改玩家相位。
+   共相锚定物 anchors：[{x,y,axis,dist,speed,phase}]——全相位致命的往返飞行
+   刺球，轨迹是 attemptTime 的正弦函数（确定性），切相不消失。 */
+let imprintState = [], echoQueue = [], echoOff = {}, imprintPrevCx = null;
+function anchorPos(a){
+  const off = Math.sin(attemptTime * a.speed + (a.phase || 0)) * a.dist;
+  return a.axis === "y" ? { x: a.x, y: a.y + off } : { x: a.x + off, y: a.y };
+}
+/* —— 脆相平台（第一批）：platforms 里带 fragile:true 的平台，在其所属相位激活
+   期间持续计时，满 FRAG_LIFE（0.8s）碎裂——碎裂后同一相位内不再生、站上去按
+   普通掉落物理；切走（相位不再激活）计时与碎裂一并重置。惩罚的是「切早了」：
+   0.8s × 195px/s ≈ 156px 的可跑距离，长脆台必须分段或配合换相节奏。 —— */
+const FRAG_LIFE = 0.8;
+let fragState = [];   // 与 level.platforms 同序：{t, broken}，resetRun 重建
 function inZoneList(list){ return (list || []).some(r => player.x >= r.x0 && player.x <= r.x1); }
 function inInvert(){ return inZoneList(level.inverts); }
 function inLock(){ return inZoneList(level.locks); }
@@ -1748,6 +2041,9 @@ function shift(dir){
   if (level.trap && curState().plat !== prevPlat && player.x >= level.trap.x0 && player.x <= level.trap.x1) trapTrigger();
   shiftCD = 0.4;
   runShifts++; levelShifts++;
+  // 回声·环境版：标记区内成功移位 → 延迟翻转该区机关（只改机关，不改玩家相位）
+  for (const z of level.echoes || [])
+    if (player.x >= z.x0 && player.x <= z.x1) echoQueue.push({ at: attemptTime + (z.delay || 1.5), id: z.id });
   flash = 0.35; shake = Math.max(shake, 3);
   shiftFx();
   sfx("shift", dir);
@@ -1819,7 +2115,15 @@ function pressShift(dir){
   if (screen === "title") { runTime = 0; deaths = 0; runShifts = 0; achToast = ""; screen = "play"; loadLevel(0); Music.start(); return; }
   if (screen === "win")   { screen = "title"; return; }
   if (screen !== "play") return;
+  const rawDir = dir;
   if (inInvert()) dir = -dir;   // 颠倒区：左右互换（输入层反转，规则照常生效）
+  if (shiftCD > 0){
+    // 冷却中：末 100ms 内＝缓存一格（冷却结束在 step 里立即执行）；更早＝拒绝反馈
+    // （反馈画在玩家实际按下的那个垫上，故记原始方向 rawDir）
+    if (shiftCD <= BUF_WIN){ bufDir = dir; bufSide = rawDir; bufFxT = 0.35; }
+    else { rejSide = rawDir; rejFxT = 0.22; }
+    return;
+  }
   shift(dir);
 }
 window.addEventListener("keydown", (e) => {
@@ -1905,11 +2209,36 @@ function step(dt){
   if (shieldBusy) return;   // 领护盾广告流程中：世界冻结，广告回来再继续
   runTime += dt; levelTime += dt; attemptTime += dt; shieldOfferT += dt;
   if (shiftCD > 0) shiftCD -= dt;
+  // 输入缓冲兑现：冷却刚结束且有缓存 → 立即执行（shift 内部按当刻规则复查）
+  if (bufDir && shiftCD <= 0){ const d = bufDir; bufDir = 0; shift(d); }
+  if (bufFxT > 0) bufFxT -= dt;
+  if (rejFxT > 0) rejFxT -= dt;
   const st = curState(), S = CONFIG.playerSize, PH = 22;
   player.vx = CONFIG.runSpeed * speedMul();
   player.vy += CONFIG.gravity * st.grav * dt;
   player.vy = Math.max(-CONFIG.maxFall, Math.min(CONFIG.maxFall, player.vy));
 
+  // 相位印记：着地越线记录 → 2s 后激活（存活 4s）；回声队列到点翻转机关
+  const cxNow = player.x + 15;
+  for (let i = 0; i < (level.imprints || []).length; i++){
+    const im = level.imprints[i], st = imprintState[i];
+    if (st && player.grounded && imprintPrevCx !== null && imprintPrevCx !== cxNow &&
+        im.lines.some(L => (imprintPrevCx - L) * (cxNow - L) <= 0 && Math.abs(cxNow - L) < 40)){
+      st.stage = 1; st.t = 2.0; st.ring = ring;   // 记录：当前切换不能撤销它
+    }
+    if (st && st.stage === 1){ st.t -= dt; if (st.t <= 0){ st.stage = 2; st.t = 4.0; } }
+    else if (st && st.stage === 2){ st.t -= dt; if (st.t <= 0) st.stage = 0; }
+  }
+  imprintPrevCx = cxNow;
+  for (let i = echoQueue.length - 1; i >= 0; i--)
+    if (attemptTime >= echoQueue[i].at){ echoOff[echoQueue[i].id] = !echoOff[echoQueue[i].id]; echoQueue.splice(i, 1); }
+  // 脆相平台计时：激活期间累积，满 0.8s 碎裂；不激活立即重置（切走再切回＝新平台）
+  for (let i = 0; i < level.platforms.length; i++){
+    const p = level.platforms[i];
+    if (!p.fragile || !fragState[i]) continue;
+    if (platActive(p)){ fragState[i].t += dt; if (fragState[i].t >= FRAG_LIFE) fragState[i].broken = true; }
+    else { fragState[i].t = 0; fragState[i].broken = false; }
+  }
   // Platforms are one-way surfaces in the gravity axis: no side collision.
   // (Solid AABB sides pin the player on platform corners at state seams —
   //  see BUG_LOG 2026-11-21. Swept landing on the gravity-facing surface only.)
@@ -1917,8 +2246,10 @@ function step(dt){
   player.x += player.vx * dt;
   player.y += player.vy * dt;
   player.grounded = false;
-  for (const p of level.platforms){
+  for (let pi = 0; pi < level.platforms.length; pi++){
+    const p = level.platforms[pi];
     if (!platActive(p)) continue;
+    if (p.fragile && fragState[pi] && fragState[pi].broken) continue;   // 已碎：穿过去
     if (player.x + S <= p.x || player.x >= p.x + p.w) continue;
     if (st.grav > 0 && player.vy >= 0 && prevY + S <= p.y + 0.01 && player.y + S >= p.y){
       player.y = p.y - S; player.vy = 0; player.grounded = true;
@@ -1963,6 +2294,19 @@ function step(dt){
       if (overlaps(box, sb)) { lastDeathTrap = true; die(); return; }
     }
   }
+  // 相位印记激活刺：只在被记录的 ring 里致命
+  for (let i = 0; i < (level.imprints || []).length; i++){
+    const im = level.imprints[i], st = imprintState[i];
+    if (st && st.stage === 2 && st.ring === ring){
+      const sb = im.hang ? { x: im.ax, y: im.y, w: 26, h: 20 } : { x: im.ax, y: im.y - 20, w: 26, h: 20 };
+      if (overlaps(box, sb)) { die(); return; }
+    }
+  }
+  // 共相锚定物：任何相位都致命（22px 刺球盒）
+  for (const a of level.anchors || []){
+    const ap = anchorPos(a);
+    if (overlaps(box, { x: ap.x - 11, y: ap.y - 11, w: 22, h: 22 })) { die(); return; }
+  }
   // orbs: touching one restores the mid-air gravity flip (回气珠)
   for (let i = 0; i < (level.orbs || []).length; i++){
     if (orbTaken[i]) continue;
@@ -1972,12 +2316,14 @@ function step(dt){
       burst(o.x, o.y, "#66d9e8"); sfx("goal");
     }
   }
-  // random events: telegraphed forced shift (异变)
+  // 异变事件：电报式强制移位。方向由关卡数据 dir 字段写死（缺省 +1）——
+  // 旧版用 Math.random 掷方向，同一输入序列每局结果不同，违反确定性口径，
+  // 已按规则冻结（RULES-规则冻结.md）改为数据驱动。
   for (let i = 0; i < (level.events || []).length; i++){
     if (evDone[i]) continue;
     if (player.x >= level.events[i].x){
       evDone[i] = true;
-      evWarn = { dir: Math.random() < 0.5 ? 1 : -1, t: 0.85 };
+      evWarn = { dir: level.events[i].dir || 1, t: 0.85 };
       sfx("deny");
     }
   }
@@ -2222,12 +2568,37 @@ function draw(){
     ctx.strokeRect(p.x, p.y, p.w, 22); ctx.setLineDash([]); ctx.globalAlpha = 1;
   }
   // active platforms
-  for (const p of level.platforms){
+  for (let pi = 0; pi < level.platforms.length; pi++){
+    const p = level.platforms[pi];
     if (!platActive(p)) continue;
+    const fs = p.fragile ? fragState[pi] : null;
+    if (fs && fs.broken){
+      // 已碎：只剩淡虚线残影，明确「这里踩不了了」
+      ctx.strokeStyle = "rgba(255,255,255,0.30)"; ctx.setLineDash([5, 6]); ctx.lineWidth = 1.5;
+      ctx.strokeRect(p.x, p.y + 4, p.w, 14); ctx.setLineDash([]);
+      continue;
+    }
     ctx.fillStyle = p.set === "B" ? st.platB : st.platA;
     if (p.set === "AB") ctx.fillStyle = "#8d99ae";
     rr(p.x, p.y, p.w, 22, 5); ctx.fill();
-    ctx.fillStyle = "rgba(255,255,255,0.25)"; ctx.fillRect(p.x, p.y, p.w, 4);
+    // 实体感：深色描边＋顶高光＋底暗边——与 HUD 条区分开（UI 优化，纯视觉）
+    ctx.strokeStyle = "rgba(10,10,20,0.45)"; ctx.lineWidth = 2; rr(p.x, p.y, p.w, 22, 5); ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.28)"; ctx.fillRect(p.x, p.y, p.w, 4);
+    ctx.fillStyle = "rgba(0,0,0,0.28)"; ctx.fillRect(p.x, p.y + 18, p.w, 4);
+    if (fs && fs.t > 0.02){
+      // 脆相裂纹：随计时进度加深加多（0.8s 碎裂的可读预告）
+      const pr = Math.min(1, fs.t / FRAG_LIFE);
+      ctx.strokeStyle = "rgba(20,16,10," + (0.35 + 0.55 * pr).toFixed(2) + ")"; ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      const n = 2 + Math.floor(pr * 5);
+      for (let k = 0; k < n; k++){
+        const fx = p.x + ((k + 0.5) / 7) * p.w;
+        ctx.moveTo(fx, p.y + 2);
+        ctx.lineTo(fx + ((k % 2) ? 7 : -6), p.y + 12);
+        ctx.lineTo(fx + ((k % 2) ? -3 : 5), p.y + 20);
+      }
+      ctx.stroke();
+    }
   }
   // spikes
   for (const s of level.spikes){
@@ -2300,6 +2671,62 @@ function draw(){
       ctx.beginPath(); ctx.arc(cx + (k - 1.5) * 11, dy, k === ph ? 4 : 2.6, 0, Math.PI * 2); ctx.fill();
     }
     ctx.globalAlpha = 1;
+  }
+  // —— 第二批机制渲染：回声区标记 / 相位印记（线·预告·激活刺）/ 共相锚定物 ——
+  for (const z of level.echoes || []){
+    const pending = echoQueue.some(q => q.id === z.id);
+    ctx.strokeStyle = pending ? "rgba(255,209,102,0.95)" : "rgba(255,255,255,0.35)";
+    ctx.lineWidth = 2; ctx.beginPath();
+    ctx.moveTo(z.x0, 452); ctx.lineTo(z.x1, 452);
+    ctx.moveTo(z.x0, 446); ctx.lineTo(z.x0, 458); ctx.moveTo(z.x1, 446); ctx.lineTo(z.x1, 458);
+    ctx.stroke();
+    if (pending){ ctx.fillStyle = "#ffd166"; ctx.beginPath(); ctx.arc((z.x0 + z.x1) / 2, 444, 3.5, 0, Math.PI * 2); ctx.fill(); }
+  }
+  for (let i = 0; i < (level.imprints || []).length; i++){
+    const im = level.imprints[i], st = imprintState[i];
+    const baseY = im.hang ? im.y + 20 : im.y;
+    // 记录线：细柱＋菱形（与激活刺上方的菱形同形呼应）
+    for (const L of im.lines){
+      ctx.strokeStyle = "rgba(177,151,255,0.55)"; ctx.lineWidth = 2; ctx.setLineDash([4, 5]);
+      ctx.beginPath(); ctx.moveTo(L, im.hang ? im.y : im.y - 44); ctx.lineTo(L, im.hang ? im.y + 44 : im.y); ctx.stroke(); ctx.setLineDash([]);
+      ctx.save(); ctx.translate(L, im.hang ? im.y + 30 : im.y - 52); ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = st && st.stage > 0 ? "#b197fc" : "rgba(177,151,255,0.5)";
+      ctx.fillRect(-5, -5, 10, 10); ctx.restore();
+    }
+    if (st && st.stage === 1){
+      // 预告：目标点菱形轮廓＋倒计时弧（还剩 st.t / 2s）
+      ctx.save(); ctx.translate(im.ax + 13, im.hang ? im.y + 34 : im.y - 36); ctx.rotate(Math.PI / 4);
+      ctx.strokeStyle = "#b197fc"; ctx.lineWidth = 2; ctx.strokeRect(-6, -6, 12, 12); ctx.restore();
+      ctx.strokeStyle = "#ffd166"; ctx.lineWidth = 2.5; ctx.beginPath();
+      ctx.arc(im.ax + 13, im.hang ? im.y + 34 : im.y - 36, 11, -Math.PI / 2, -Math.PI / 2 + (st.t / 2) * Math.PI * 2); ctx.stroke();
+    }
+    if (st && st.stage === 2){
+      // 激活刺：常色红刺＋记录 ring 色芯＋菱形标记；非记录 ring 时影子化（现行语言）
+      if (st.ring !== ring) ctx.globalAlpha = 0.3;
+      ctx.fillStyle = "#ff5d5d"; ctx.beginPath();
+      if (im.hang){ ctx.moveTo(im.ax, im.y); ctx.lineTo(im.ax + 13, im.y + 20); ctx.lineTo(im.ax + 26, im.y); }
+      else { ctx.moveTo(im.ax, im.y); ctx.lineTo(im.ax + 13, im.y - 20); ctx.lineTo(im.ax + 26, im.y); }
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = CONFIG.states[st.ring].player;
+      ctx.beginPath(); ctx.arc(im.ax + 13, im.hang ? im.y + 7 : im.y - 7, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.save(); ctx.translate(im.ax + 13, im.hang ? im.y + 34 : im.y - 36); ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = "#b197fc"; ctx.fillRect(-5, -5, 10, 10); ctx.restore();
+      ctx.globalAlpha = 1;
+    }
+    void baseY;
+  }
+  for (const a of level.anchors || []){
+    const ap = anchorPos(a);
+    ctx.save(); ctx.translate(ap.x, ap.y); ctx.rotate(attemptTime * 1.5);
+    ctx.fillStyle = "#ff5d5d";
+    for (let k = 0; k < 8; k++){
+      ctx.rotate(Math.PI / 4);
+      ctx.beginPath(); ctx.moveTo(-3.5, -9); ctx.lineTo(3.5, -9); ctx.lineTo(0, -16); ctx.closePath(); ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fillStyle = "#2b2d42"; ctx.fill();
+    ctx.strokeStyle = "#e9ecef"; ctx.lineWidth = 1.6; ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, 3.6, 0, Math.PI * 2); ctx.fillStyle = "#ff5d5d"; ctx.fill();
+    ctx.restore();
   }
   // orbs
   for (let i = 0; i < (level.orbs || []).length; i++){
@@ -2403,16 +2830,29 @@ function draw(){
   if (screen === "win") drawWin();
   if (screen === "dead") drawDeathPanel();
   drawShieldChip();
-  // touch pads
+  // touch pads：命中热区（padL/padR）保持不变；可视底板缩小＋降透明（UI 优化，
+  // 减轻对来袭方向的遮挡）。冷却反馈：缓存命中→对应垫金边；拒绝→对应垫变灰抖动。
   padL = { x: 16, y: H - 92, w: 196, h: 74 }; padR = { x: W - 212, y: H - 92, w: 196, h: 74 };
   if (screen === "play" && !SHOT){
-    ctx.globalAlpha = 0.55; ctx.fillStyle = "#ffffff";
-    rr(padL.x, padL.y, padL.w, padL.h, 14); ctx.fill();
-    rr(padR.x, padR.y, padR.w, padR.h, 14); ctx.fill();
-    ctx.globalAlpha = 1; ctx.fillStyle = "#14142b"; ctx.font = "bold 21px system-ui"; ctx.textAlign = "center";
-    const inv = screen === "play" && inInvert();
-    ctx.fillText(inv ? "前移 ▶" : "◀ 后移", padL.x + padL.w / 2, padL.y + 46);
-    ctx.fillText(inv ? "◀ 后移" : "前移 ▶", padR.x + padR.w / 2, padR.y + 46);
+    const inv = inInvert();
+    const drawPad = (pad, side, label) => {
+      const vw = 148, vh = 54;
+      let vx = pad.x + (pad.w - vw) / 2, vy = pad.y + (pad.h - vh) / 2;
+      const rejected = rejFxT > 0 && rejSide === side;
+      if (rejected) vx += Math.sin(performance.now() / 18) * 3;
+      ctx.globalAlpha = rejected ? 0.30 : 0.38;
+      ctx.fillStyle = rejected ? "#9aa0ae" : "#ffffff";
+      rr(vx, vy, vw, vh, 12); ctx.fill();
+      ctx.globalAlpha = 1;
+      if (bufFxT > 0 && bufSide === side){
+        ctx.strokeStyle = "rgba(255,209,102,0.95)"; ctx.lineWidth = 3;
+        rr(vx - 2, vy - 2, vw + 4, vh + 4, 13); ctx.stroke();
+      }
+      ctx.fillStyle = "#14142b"; ctx.font = "bold 19px system-ui"; ctx.textAlign = "center";
+      ctx.fillText(label, vx + vw / 2, vy + 35);
+    };
+    drawPad(padL, -1, inv ? "前移 ▶" : "◀ 后移");
+    drawPad(padR, 1, inv ? "◀ 后移" : "前移 ▶");
   }
   drawTut();
 }
@@ -2461,6 +2901,13 @@ function drawHUD(){
     const x = W / 2 - 66 + i * 44;
     ctx.beginPath(); ctx.arc(x, 29, i === ring ? 13 : 9, 0, Math.PI * 2);
     ctx.fillStyle = i === ring ? CONFIG.states[i].platB : "rgba(255,255,255,0.25)"; ctx.fill();
+  }
+  // 冷却可见：当前相位点外圈金弧按剩余冷却回填（满圈＝可再移位）；缓存中整圈闪烁
+  if (shiftCD > 0 || bufDir){
+    const cx = W / 2 - 66 + ring * 44, frac = bufDir ? 1 : 1 - Math.max(shiftCD, 0) / 0.4;
+    ctx.strokeStyle = bufDir ? "rgba(255,209,102," + (0.6 + 0.4 * Math.sin(performance.now() / 60)) + ")" : "rgba(255,209,102,0.9)";
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(cx, 29, 16.5, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2); ctx.stroke();
   }
   ctx.fillStyle = "#fff"; ctx.font = "bold 15px system-ui"; ctx.textAlign = "center";
   ctx.fillText(st.name, W / 2, 66);
@@ -3490,6 +3937,15 @@ window.__game = {
   get invuln(){ return invulnT; },
   get deadBtns(){ return deadBtns.map(b => ({ action: b.action, disabled: !!b.disabled })); },
   get evDir(){ return evWarn ? evWarn.dir : 0; },
+  get cd(){ return Math.round(shiftCD * 1000); },
+  get buf(){ return { dir: bufDir, side: bufSide, rej: rejFxT > 0, rejSide }; },
+  get fragile(){ return fragState.map((f, i) => ({ t: Math.round(f.t * 1000), broken: f.broken, fragile: !!level.platforms[i].fragile })); },
+  get imprints(){ return imprintState.map(s => ({ stage: s.stage, t: Math.round(s.t * 1000), ring: s.ring })); },
+  get echo(){ return { queued: echoQueue.length, off: Object.assign({}, echoOff) }; },
+  get roomsOn(){ return ROOMS_ON; },
+  get levelNames(){ return LEVELS.map(l => l.name); },
+  get unlockedIdx(){ return unlocked; },
+  get roomList(){ return ROOMS_ON ? ROOMS.map((r, i) => ({ idx: LEVELS.length - ROOMS.length + i, name: r.name })) : []; },
   get boot(){ return { done: LOAD.done, total: LOAD.total }; },
   get mapCard(){ return mapCard; },
   get mapPanel(){ return mapPanel; },
