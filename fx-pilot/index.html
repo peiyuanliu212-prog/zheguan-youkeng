@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pixelfx 试点 · 四相移位 / 这关有坑（独立演示，不并入正式版）</title>
+<style>
+  html,body{margin:0;padding:0;background:#0b0e16;color:#cfd6e4;font-family:system-ui,"PingFang SC","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1000px;margin:0 auto;padding:18px 14px 30px}
+  h1{font-size:19px;margin:4px 0 2px;font-weight:650}
+  .sub{font-size:13px;color:#8b94a7;margin-bottom:12px}
+  canvas{display:block;width:100%;height:auto;background:#10131d;border:1px solid #232a3d;border-radius:10px}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 8px}
+  button{background:#1a2133;color:#dbe3f2;border:1px solid #2c3752;border-radius:8px;padding:8px 14px;font-size:14px;cursor:pointer}
+  button.on{background:#31456e;border-color:#4a6db3;color:#fff}
+  #cap{font-size:14px;color:#aeb9cf;min-height:22px}
+  #cap b{color:#ffd76a;font-weight:600}
+  .foot{margin-top:14px;font-size:12px;color:#68738a;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Pixelfx 视觉试点</h1>
+  <div class="sub">给《四相移位 / 这关有坑》的三个瞬间配 pixelfx 代码特效：死亡爆点、移位粒子、通关光效。独立演示页，不并入正式版。</div>
+  <canvas id="cv" width="960" height="540"></canvas>
+  <div class="bar">
+    <button data-scene="0">① 死亡爆点</button>
+    <button data-scene="1">② 移位粒子</button>
+    <button data-scene="2">③ 通关光效</button>
+    <button id="auto" class="on">自动轮播：开</button>
+  </div>
+  <div id="cap"></div>
+  <div class="foot">特效来源：pixelfx（patch-gg，MIT 许可，部分效果改编自 Hugo Duprez / Sprite Fusion 的开源效果，许可全文见同目录 LICENSE）。全部特效由代码逐帧绘制，无图片资源。</div>
+</div>
+
+<script type="module">
+import { createFrame, clearFrame, createFx, composite } from "./lib/core/index.js";
+import * as explosionFx from "./lib/fx/explosions/small-explosion.js";
+import * as empFx from "./lib/fx/scifi/emp-blast.js";
+import * as collectFx from "./lib/fx/pickups/collect-burst.js";
+
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+ctx.imageSmoothingEnabled = false;
+
+/* ---------- fx layer: render a pixelfx effect into the scene ---------- */
+const active = [];
+function spawnFx(mod, wx, wy, scale, opts = {}) {
+  const [w, h] = mod.meta.size, [ox, oy] = mod.meta.origin;
+  const frame = createFrame(w, h);
+  const fx = createFx(mod, { x: ox, y: oy, seed: 7, ...opts });
+  const off = document.createElement("canvas"); off.width = w; off.height = h;
+  const octx = off.getContext("2d");
+  const img = octx.createImageData(w, h);
+  active.push({ fx, frame, off, octx, img, wx, wy, ox, oy, scale });
+}
+function drawFx(dt) {
+  for (let i = active.length - 1; i >= 0; i--) {
+    const a = active[i];
+    a.fx.update(dt);
+    clearFrame(a.frame);
+    a.fx.draw(a.frame);
+    composite(a.frame, a.img.data, null);
+    a.octx.putImageData(a.img, 0, 0);
+    ctx.drawImage(a.off, Math.round(a.wx - a.ox * a.scale), Math.round(a.wy - a.oy * a.scale),
+      a.off.width * a.scale, a.off.height * a.scale);
+    if (a.fx.done()) active.splice(i, 1);
+  }
+}
+
+/* ---------- tiny stage in the game's visual language ---------- */
+const GY = 460;                 // ground surface y (same as the game)
+const SQ = 30;                  // the little square
+const DAWN = ["#241b12", "#171208"], NIGHT = ["#131f3d", "#0a0f22"];
+let bgMix = 0;                  // 0 = dawn, 1 = night
+function drawStage() {
+  const g = ctx.createLinearGradient(0, 0, 0, 540);
+  const mixc = (a, b, t) => {
+    const pa = [1, 3, 5].map(i => parseInt(a.substr(i, 2), 16)), pb = [1, 3, 5].map(i => parseInt(b.substr(i, 2), 16));
+    return `rgb(${pa.map((v, i) => Math.round(v + (pb[i] - v) * t)).join(",")})`;
+  };
+  g.addColorStop(0, mixc(DAWN[0], NIGHT[0], bgMix)); g.addColorStop(1, mixc(DAWN[1], NIGHT[1], bgMix));
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 960, 540);
+  ctx.fillStyle = "rgba(255,255,255,.05)";
+  for (let i = 0; i < 40; i++) ctx.fillRect((i * 173) % 960, (i * 97) % 300, 2, 2);
+}
+function drawGround(x0, x1, ceil) {
+  ctx.fillStyle = "#1c2233";
+  if (ceil) ctx.fillRect(x0, 40, x1 - x0, 40); else ctx.fillRect(x0, GY, x1 - x0, 80);
+  ctx.fillStyle = bgMix < 0.5 ? "#ffb648" : "#7fa8ff";
+  if (ceil) ctx.fillRect(x0, 78, x1 - x0, 3); else ctx.fillRect(x0, GY, x1 - x0, 3);
+}
+function drawSquare(x, y, flip) {
+  ctx.save();
+  ctx.translate(x + SQ / 2, y + SQ / 2); if (flip) ctx.scale(1, -1);
+  ctx.fillStyle = "#ffb648";
+  ctx.beginPath(); ctx.roundRect(-SQ / 2, -SQ / 2, SQ, SQ, 8); ctx.fill();
+  ctx.fillStyle = "#7a4b12";
+  ctx.fillRect(-7, -3, 4, 4); ctx.fillRect(4, -3, 4, 4);
+  ctx.restore();
+}
+function drawSpike(x) {
+  ctx.fillStyle = "#39415c";
+  ctx.beginPath(); ctx.moveTo(x, GY); ctx.lineTo(x + 13, GY - 26); ctx.lineTo(x + 26, GY); ctx.closePath(); ctx.fill();
+}
+function drawGoal(x) {
+  ctx.fillStyle = "rgba(120,255,170,.14)"; ctx.fillRect(x, GY - 92, 44, 92);
+  ctx.strokeStyle = "#69e79b"; ctx.lineWidth = 2; ctx.strokeRect(x, GY - 92, 44, 92);
+}
+
+/* ---------- scenes ---------- */
+const GOLD = ["#2a1a04", "#5c3a08", "#9c6d14", "#d99a26", "#ffc23d", "#ffe26b", "#fff3a6", "#ffffff"];
+const SCENES = [
+  { name: "死亡爆点", fxName: "explosions / small-explosion（size 0.5，原火色）", dur: 4.2 },
+  { name: "移位粒子", fxName: "scifi / emp-blast（原蓝紫色，正对夜幕/虚空相位）", dur: 4.6 },
+  { name: "通关光效", fxName: "pickups / collect-burst（调色板换金色）", dur: 4.2 },
+];
+let scene = 0, st = 0, fired = false;
+const cap = document.getElementById("cap");
+function setScene(i) {
+  scene = i; st = 0; fired = false; active.length = 0;
+  bgMix = i === 2 ? 1 : 0;
+  document.querySelectorAll("button[data-scene]").forEach(b => b.classList.toggle("on", +b.dataset.scene === i));
+  cap.innerHTML = `<b>${SCENES[i].name}</b> · ${SCENES[i].fxName}`;
+}
+document.querySelectorAll("button[data-scene]").forEach(b => b.onclick = () => { auto = false; autoBtn.textContent = "自动轮播：关"; autoBtn.classList.remove("on"); setScene(+b.dataset.scene); });
+let auto = true;
+const autoBtn = document.getElementById("auto");
+autoBtn.onclick = () => { auto = !auto; autoBtn.textContent = `自动轮播：${auto ? "开" : "关"}`; autoBtn.classList.toggle("on", auto); };
+
+const SPEED = 195;
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  st += dt;
+  drawStage();
+  const runx = 60 + SPEED * st;   // square's left edge as it auto-runs
+
+  if (scene === 0) {
+    drawGround(0, 960, false); drawSpike(520);
+    if (!fired && runx + SQ >= 520) { fired = true; spawnFx(explosionFx, 533, GY, 1.6, { size: 0.5 }); }
+    if (!fired) drawSquare(runx, GY - SQ, false);
+  } else if (scene === 1) {
+    bgMix = Math.min(1, Math.max(0, (st - 1.6) / 0.8));
+    drawStage(); drawGround(0, 960, false); drawGround(0, 960, true);
+    if (!fired && st >= 1.6) { fired = true; spawnFx(empFx, runx + SQ / 2, GY - SQ / 2, 1.5, {}); }
+    if (st < 1.6) drawSquare(runx, GY - SQ, false);
+    else drawSquare(runx, 80, true);
+  } else {
+    drawGround(0, 960, false); drawGoal(800);
+    if (!fired && runx + SQ >= 792) { fired = true; spawnFx(collectFx, 822, GY - 40, 1.7, { palette: GOLD }); }
+    if (runx + SQ < 800 || fired) drawSquare(Math.min(runx, 800 - SQ), GY - SQ, false);
+  }
+  drawFx(dt);
+  if (auto && st > SCENES[scene].dur) setScene((scene + 1) % 3);
+  requestAnimationFrame(frame);
+}
+setScene(0);
+requestAnimationFrame(frame);
+
+/* test hooks for screenshots */
+window.__pilot = { go: (i) => { auto = false; setScene(i); }, get scene() { return scene; }, get t() { return st; } };
+</script>
+</body>
+</html>
