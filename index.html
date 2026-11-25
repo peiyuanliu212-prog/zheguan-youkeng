@@ -16633,9 +16633,10 @@ function draw(){
     ctx.fillText("⊘ 凝滞区 — 无法移位", r.x0 + 12, 90);
   }
   for (const r of level.speeds || []){
-    ctx.fillStyle = "rgba(255,212,59,0.05)"; ctx.fillRect(r.x0, 0, r.x1 - r.x0, CONFIG.viewH);
-    ctx.fillStyle = "rgba(255,220,100,0.85)"; ctx.font = "bold 15px system-ui"; ctx.textAlign = "left";
-    ctx.fillText("» 加速区", r.x0 + 12, 90);
+    const fast = r.mul > 1;
+    ctx.fillStyle = fast ? "rgba(255,212,59,0.05)" : "rgba(110,180,255,0.06)"; ctx.fillRect(r.x0, 0, r.x1 - r.x0, CONFIG.viewH);
+    ctx.fillStyle = fast ? "rgba(255,220,100,0.85)" : "rgba(150,200,255,0.85)"; ctx.font = "bold 15px system-ui"; ctx.textAlign = "left";
+    ctx.fillText(fast ? "» 加速区" : "« 减速区", r.x0 + 12, 90);
   }
   // 对账门（纯视觉）：全高半透明光墙＋门顶的 need 数字（≡n）。判定在 step 里。
   for (const g of level.gates || []){
